@@ -115,6 +115,19 @@
   .compass .rn-bg { fill: #fff; stroke: var(--line); }
   .compass .arrow { stroke: var(--gold); stroke-width: 7; stroke-linecap: round; }
   .compass .arrowhead { fill: var(--gold); stroke: #9c7a10; stroke-width: 1; }
+  .compass .ring-edge { fill: none; stroke: var(--line); stroke-width: 2; }
+  .compass .pitstxt { font-size: 10px; font-weight: 700; fill: #5d6778; }
+  .compass .credit { font-size: 6.5px; fill: var(--muted); }
+  .compass .favline { fill: none; stroke: #fff; stroke-width: 1.6; stroke-dasharray: 5 3; }
+  .compass .photo-only { display: none; }
+  /* Over the satellite photo: hide the drawn runways/pits, add halos so marks read on the imagery */
+  .compass.photo .drawn { display: none; }
+  .compass.photo .photo-only { display: inline; }
+  .compass.photo .tick { stroke: #fff; }
+  .compass.photo .cl, .compass.photo .pitstxt { fill: #fff; paint-order: stroke; stroke: rgba(20,26,38,.75); stroke-width: 3px; stroke-linejoin: round; }
+  .compass.photo .flow, .compass.photo .flowhead { filter: drop-shadow(0 0 1.2px #fff) drop-shadow(0 0 1px #fff); }
+  .compass.photo .arrow { filter: drop-shadow(0 0 1.5px rgba(0,0,0,.6)); }
+  .compass:not(.photo) .credit { display: none; }
   .wind-stats { flex: 1; min-width: 260px; }
   .wind-wrap { justify-content: center; gap: 24px; }
   .stack { display: grid; gap: 16px; align-content: start; }
@@ -321,7 +334,8 @@
   Ratings are based on the aircraft type picked in Settings.</p>
   <p>Data: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> forecast (CC BY 4.0),
   <a href="https://www.weather.gov/" target="_blank" rel="noopener">National Weather Service</a> alerts,
-  <a href="https://www.swpc.noaa.gov/" target="_blank" rel="noopener">NOAA SWPC</a> Kp index. Refreshes every 10 minutes.</p>
+  <a href="https://www.swpc.noaa.gov/" target="_blank" rel="noopener">NOAA SWPC</a> Kp index. Refreshes every 10 minutes.
+  Field imagery: Google Earth.</p>
 </footer>
 
 <dialog id="settings">
@@ -374,6 +388,10 @@ const FIELD = {
   pilotFacingTrue: 236.5,
   // Glare when the sun is this low and this close to where pilots are looking
   glare: { maxElev: 30, halfAngle: 50, maxCloud: 80 },
+  // Satellite photo behind the compass (Google Earth, north up). cx/cy = pixel where the runways
+  // cross; pxPerFt measured from the runway lengths. Set photo: null to go back to the drawn runways.
+  photo: { src: 'field-photo.jpg', w: 646, h: 564, cx: 323.3, cy: 314.3, pxPerFt: 0.6075,
+           fill: '#8f9a7c', credit: 'Imagery © Google' },
 };
 
 // Limits are [good up to, caution up to] in mph. Above the caution limit = no-go.
@@ -647,9 +665,9 @@ function compassSvg(dirTrue, comp, windSpeed, sun) {
   // Pits marker + taxiway
   const pitsR = FIELD.pits.distFt * pxPerFt;
   const [px, py] = pt(FIELD.pits.bearing, pitsR);
-  const pits = `<line x1="${C}" y1="${C}" x2="${px}" y2="${py}" stroke="#8b95a7" stroke-width="4"/>
-    <rect x="${px - 3}" y="${py - 12}" width="10" height="24" rx="2" fill="#c8323a" stroke="#fff"/>
-    <text x="${px + 12}" y="${py + 4}" font-size="10" font-weight="700" fill="#5d6778">Pits</text>`;
+  const pits = `<g class="drawn"><line x1="${C}" y1="${C}" x2="${px}" y2="${py}" stroke="#8b95a7" stroke-width="4"/>
+    <rect x="${px - 3}" y="${py - 12}" width="10" height="24" rx="2" fill="#c8323a" stroke="#fff"/></g>
+    <text class="pitstxt" x="${px + 12}" y="${py + 4}">Pits</text>`;
   // Windsock on the south end of the pits roof: points downwind, longer as the wind builds
   const sockX = px + 2, sockY = py + 12;
   let sock = `<circle cx="${sockX}" cy="${sockY}" r="2.5" fill="#1b2130"/>`;
@@ -672,6 +690,24 @@ function compassSvg(dirTrue, comp, windSpeed, sun) {
       <line class="cline" x1="${C}" y1="${C - e.fwd + 7}" x2="${C}" y2="${C + e.back - 7}"/>
     </g>`;
   }).join('');
+  // Over the satellite photo, just outline the favored runway
+  const favOutline = favRwy ? (() => {
+    const e = ext(favRwy), w = Math.max(10, 22 * favRwy.wid / maxWid) + 3;
+    return `<rect class="favline" transform="rotate(${favRwy.hdg} ${C} ${C})" x="${C - w / 2}" y="${C - e.fwd - 1.5}" width="${w}" height="${e.fwd + e.back + 3}" rx="3"/>`;
+  })() : '';
+  // Satellite photo, rotated from true north into the compass's magnetic frame and clipped to the ring
+  const P = FIELD.photo;
+  let photo = '';
+  if (P) {
+    const k = pxPerFt / P.pxPerFt;   // compass px per photo px
+    photo = `<defs><clipPath id="ringClip"><circle cx="${C}" cy="${C}" r="99"/></clipPath></defs>
+      <g clip-path="url(#ringClip)">
+        <circle cx="${C}" cy="${C}" r="100" fill="${P.fill}"/>
+        <image href="${P.src}" x="${C - P.cx * k}" y="${C - P.cy * k}" width="${P.w * k}" height="${P.h * k}"
+          preserveAspectRatio="none" transform="rotate(${-FIELD.magVar} ${C} ${C})"
+          onerror="this.closest('svg').classList.remove('photo')"/>
+      </g>`;
+  }
   // Pilot stations: white fence with 4 stations along the main runway's NE edge, NW of the intersection.
   // In the main runway's rotated frame, +y points NW (hdg + 180) and -x points NE.
   const mr = FIELD.runways[0], mHalfW = Math.max(10, 22 * mr.wid / maxWid) / 2;
@@ -785,9 +821,10 @@ function compassSvg(dirTrue, comp, windSpeed, sun) {
     const y1 = c >= 0 ? y - 16 : y + 12;
     return `<text class="windtxt" text-anchor="middle"><tspan x="${x}" y="${y1}">WIND</tspan><tspan x="${x}" y="${y1 + 9}">DIRECTION</tspan></text>`;
   }
-  return `<svg class="compass" viewBox="-42 -22 304 264" role="img" aria-label="Wind from ${r0(dir)} degrees magnetic. Runways ${FIELD.runways.map(r => rwyNum(r.hdg) + '/' + rwyNum(r.hdg + 180)).join(' and ')}">
-    <circle class="ring" cx="${C}" cy="${C}" r="100"/>${ticks}${labels}
-    ${pits}${strips}${stations}
+  return `<svg class="compass${P ? ' photo' : ''}" viewBox="-42 -22 304 264" role="img" aria-label="Wind from ${r0(dir)} degrees magnetic. Runways ${FIELD.runways.map(r => rwyNum(r.hdg) + '/' + rwyNum(r.hdg + 180)).join(' and ')}">
+    <circle class="ring" cx="${C}" cy="${C}" r="100"/>${photo}<circle class="ring-edge" cx="${C}" cy="${C}" r="100"/>${ticks}${labels}
+    ${pits}<g class="drawn">${strips}</g><g class="photo-only">${favOutline}</g>${stations}
+    ${P ? `<text class="credit" x="${C + 128}" y="${C + 128}" text-anchor="end">${P.credit}</text>` : ''}
     ${windArrow}${flow}${rn}${sock}${sunMark}
   </svg>`;
 }
