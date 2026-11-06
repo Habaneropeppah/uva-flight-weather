@@ -123,6 +123,8 @@
   .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin-top: 10px; font-size: .95rem; }
   .kv dt { color: var(--muted); }
   .kv dd { margin: 0; font-weight: 600; }
+  .kv.sources { margin-top: 0; font-size: .88rem; }
+  .kv.sources dd { font-weight: 400; }
   .note { font-size: .8rem; color: var(--muted); margin-top: 10px; }
   .note a, .linkish { color: var(--sky-1); cursor: pointer; text-decoration: underline; background: none; border: 0; padding: 0; font-size: inherit; }
 
@@ -247,8 +249,15 @@
         <div id="aloft"></div>
       </section>
       <section class="card">
-        <h2>Observed Nearby <small>actual reports</small></h2>
-        <div id="obs"><span class="loading">Loading…</span></div>
+        <h2>Where This Data Comes From</h2>
+        <dl class="kv sources">
+          <dt>Forecast</dt><dd>NOAA weather models (HRRR, updated hourly, blended with GFS for later days) for a point about 0.2 mi from the field, at 4,495 ft</dd>
+          <dt>Alerts</dt><dd>National Weather Service, Salt Lake City office, for the field's exact location</dd>
+          <dt>Sun &amp; glare</dt><dd>Calculated for the field from the date and time</dd>
+          <dt>GPS / Kp</dt><dd>NOAA Space Weather Prediction Center</dd>
+          <dt>Field info</dt><dd>Runways, pilot stations, pits, windsock and field rules from club members</dd>
+        </dl>
+        <div class="note">There's no weather station at the field yet, so everything here is a forecast for the field, not a live measurement. Check the windsock before you fly.</div>
       </section>
     </div>
   </div>
@@ -277,7 +286,7 @@
   UVA Field is an FAA-Recognized Identification Area (FRIA): aircraft without Remote ID may fly here, but only inside the site boundary and within visual line of sight.
   Ratings are based on the aircraft type picked in Settings.</p>
   <p>Data: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> forecast (CC BY 4.0),
-  <a href="https://www.weather.gov/" target="_blank" rel="noopener">National Weather Service</a> alerts &amp; observations,
+  <a href="https://www.weather.gov/" target="_blank" rel="noopener">National Weather Service</a> alerts,
   <a href="https://www.swpc.noaa.gov/" target="_blank" rel="noopener">NOAA SWPC</a> Kp index. Refreshes every 10 minutes.</p>
 </footer>
 
@@ -309,7 +318,6 @@ const FIELD = {
   lat: 40.363372,
   lon: -111.901728,
   tz: 'America/Denver',
-  station: 'KPVU',        // Provo Municipal Airport, the closest NWS reporting station
   // Magnetic variation at Saratoga Springs is about 10.5° E. Forecast wind direction is TRUE.
   magVar: 10.5,
   // Headings measured in Google Earth (true) and converted to magnetic: true - 10.5°.
@@ -935,35 +943,6 @@ function renderAlerts(features) {
   }).join('');
 }
 
-function haversineMi(a, b, c, d) {
-  const R = 3958.8, rad = x => x * Math.PI / 180;
-  const dl = rad(c - a), dn = rad(d - b);
-  const h = Math.sin(dl / 2) ** 2 + Math.cos(rad(a)) * Math.cos(rad(c)) * Math.sin(dn / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(h));
-}
-
-function renderObs(o) {
-  const p = o.properties;
-  const kmh = x => ok(x) ? x * 0.621371 : null;
-  const tF = ok(p.temperature?.value) ? p.temperature.value * 9 / 5 + 32 : null;
-  const ws = kmh(p.windSpeed?.value), wg = kmh(p.windGust?.value), wd = p.windDirection?.value;
-  const age = Math.round((Date.now() - new Date(p.timestamp)) / 60000);
-  const [lon, lat] = o.geometry?.coordinates || [];
-  const dist = ok(lat) ? Math.round(haversineMi(FIELD.lat, FIELD.lon, lat, lon)) : null;
-  const visMi = ok(p.visibility?.value) ? p.visibility.value / 1609.344 : null;
-  $('#obs').innerHTML = `
-    <div class="big" style="font-size:1.8rem">${ok(ws) ? r0(ws) : '–'} <small>mph</small> ${ok(wd) ? `<small>from ${cardinal(wd)}</small>` : ws === 0 ? '<small>calm</small>' : ''}</div>
-    <dl class="kv">
-      <dt>Station</dt><dd>Provo Airport (${FIELD.station})${dist ? `, ${dist} mi away` : ''}</dd>
-      <dt>Reported</dt><dd>${age < 120 ? `${age} min ago` : new Date(p.timestamp).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</dd>
-      <dt>Gusts</dt><dd>${ok(wg) ? r0(wg) + ' mph' : 'none reported'}</dd>
-      <dt>Temperature</dt><dd>${ok(tF) ? r0(tF) + '°F' : '–'}</dd>
-      <dt>Sky</dt><dd>${esc(p.textDescription || '–')}</dd>
-      <dt>Visibility</dt><dd>${ok(visMi) ? (visMi >= 10 ? '10+ mi' : visMi.toFixed(1) + ' mi') : '–'}</dd>
-    </dl>
-    <div class="note">Real measurements from the nearest airport. Wind at the field can differ, especially near the lake.</div>`;
-}
-
 let lastKp = null;
 function renderKp(kp) {
   const t = $('#kpTile'); if (!t) return;
@@ -985,7 +964,6 @@ async function loadAll() {
   $('#updated').textContent = 'Updating…';
   const forecast = getJSON(forecastUrl());
   const alerts = getJSON(`https://api.weather.gov/alerts/active?point=${FIELD.lat},${FIELD.lon}`, { headers: { Accept: 'application/geo+json' } });
-  const obs = getJSON(`https://api.weather.gov/stations/${FIELD.station}/observations/latest`, { headers: { Accept: 'application/geo+json' } });
   const kp = getJSON('https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json');
 
   try {
@@ -1003,7 +981,6 @@ async function loadAll() {
   }
 
   alerts.then(j => renderAlerts(j.features)).catch(() => {});
-  obs.then(renderObs).catch(() => { $('#obs').innerHTML = '<span class="loading">Observations unavailable right now.</span>'; });
   kp.then(j => { lastKp = parseKp(j); if (lastKp !== null) renderKp(lastKp); })
     .catch(() => { const t = $('#kpTile'); if (t) t.querySelector('.val').textContent = '–'; });
 }
