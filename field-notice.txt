@@ -1,0 +1,15 @@
+# FIELD NOTICE for the UVA Flight Weather app
+#
+# Whatever you type below (on lines that don't start with #) shows as a banner
+# at the top of the app. Leave it empty for no banner.
+#
+# Optional settings, on their own lines ABOVE the message:
+#   type: closed       red "Field closed" banner, and the app's verdict shows CLOSED
+#                      instead of GO/NO-GO. Without this line it's a blue "Field notice".
+#   until: 2026-11-15  the banner disappears automatically after this date
+#
+# Example:
+#   type: closed
+#   until: 2026-11-15
+#   Field closed Saturday for the fun fly setup. Back open Sunday at 8 AM.
+

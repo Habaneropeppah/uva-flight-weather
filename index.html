@@ -71,6 +71,16 @@
   .alert { border-left: 6px solid var(--nogo); background: var(--nogo-bg); }
   .alert h3 { margin: 0 0 4px; font-size: 1rem; color: var(--nogo); }
   .alert p { margin: 0; font-size: .9rem; }
+  /* Field notice set by club leadership (field-notice.txt) */
+  .notice { border-left: 6px solid #2b7bd0; background: #eaf3fd; }
+  .notice h3 { margin: 0 0 4px; font-size: 1rem; color: #1d5fa6; }
+  .notice p { margin: 0; font-size: .95rem; white-space: pre-line; }
+  .notice .until { color: var(--muted); font-size: .85rem; margin-top: 4px; }
+  .notice.closed { border-color: var(--nogo); background: var(--nogo-bg); }
+  .notice.closed h3 { color: var(--nogo); }
+  /* Airspace reminder in the verdict card */
+  .airspace { margin-top: 10px; font-size: .85rem; color: var(--muted); }
+  .airspace a { font-weight: 700; }
 
   /* Verdict */
   .verdict { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; border-left: 8px solid var(--line); }
@@ -274,6 +284,7 @@
 </header>
 
 <main>
+  <div id="notice"></div>
   <div id="alerts"></div>
 
   <section class="card verdict" id="verdict">
@@ -872,16 +883,20 @@ function render(d, hours, idx) {
   // Otherwise-good conditions with the sun in pilots' eyes get their own SUN GLARE label
   const glareOnly = now.a.lvl === 0 && now.a.glare;
   const v = $('#verdict');
-  v.className = 'card verdict ' + (glareOnly ? 'glare' : L[now.a.lvl]);
+  const closed = fieldNotice && fieldNotice.closed;   // leadership closed the field: overrides the weather
+  v.className = 'card verdict ' + (closed ? 'nogo' : glareOnly ? 'glare' : L[now.a.lvl]);
   v.innerHTML = `
-    <div class="badge">${glareOnly ? 'SUN GLARE' : badges[now.a.lvl]}</div>
+    <div class="badge">${closed ? 'CLOSED' : glareOnly ? 'SUN GLARE' : badges[now.a.lvl]}</div>
     <div class="verdict-body">
-      <h2>${glareOnly ? "Good to fly. Heads up: the sun is in pilots' eyes" : titles[now.a.lvl]}</h2>
+      <h2>${closed ? 'Field closed: see the notice above' : glareOnly ? "Good to fly. Heads up: the sun is in pilots' eyes" : titles[now.a.lvl]}</h2>
       <div class="sub" style="color:var(--muted);font-size:.9rem">Rated for: ${esc(PROFILES[settings.profile].label)}${settings.night ? ', night flying with lights' : ''} · <button class="linkish" onclick="openSettings()">change</button></div>
       ${now.a.reasons.length ? `<ul class="reasons">${now.a.reasons.map(r => `<li class="l${r.l}">${esc(r.msg)}</li>`).join('')}</ul>`
                              : `<ul class="reasons"><li>Light wind, no precipitation, good visibility</li></ul>`}
       ${tips.map(t => `<div class="tip">${esc(t)}</div>`).join('')}
-      <div class="window">${winHtml}</div>
+      ${closed ? '' : `<div class="window">${winHtml}</div>`}
+      <div class="airspace">This rates the weather only. Before you fly, check for temporary flight restrictions (TFRs),
+        which apply at FRIA sites too: <a href="https://tfr.faa.gov/" target="_blank" rel="noopener">FAA TFR list</a> ·
+        <a href="https://www.faa.gov/uas/getting_started/b4ufly" target="_blank" rel="noopener">B4UFLY apps</a></div>
     </div>`;
 
   /* Wind */
@@ -1069,6 +1084,41 @@ function renderAlerts(features) {
   }).join('');
 }
 
+/* Field notice: club leadership edits field-notice.txt (next to index.html) to post a banner.
+   Lines starting with # are ignored. Optional first lines: "type: closed" (red banner, overrides
+   the GO/NO-GO verdict) and "until: YYYY-MM-DD" (banner disappears after that date). */
+let fieldNotice = null;
+function parseNotice(txt) {
+  if (!txt || txt.trimStart().startsWith('<')) return null;   // a host's HTML error page, not our file
+  let type = 'info', until = null;
+  const msg = [];
+  for (const raw of txt.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line.startsWith('#')) continue;
+    const m = !msg.join('').trim() && line.match(/^(type|until)\s*:\s*(.+)$/i);
+    if (m) { if (m[1].toLowerCase() === 'type') type = m[2].trim().toLowerCase(); else until = m[2].trim(); continue; }
+    msg.push(line);
+  }
+  const text = msg.join('\n').trim();
+  if (!text) return null;
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: FIELD.tz });   // YYYY-MM-DD at the field
+  if (until && /^\d{4}-\d{2}-\d{2}$/.test(until) && today > until) return null;
+  return { closed: type === 'closed', text, until };
+}
+function loadNotice() {
+  return fetch('field-notice.txt', { cache: 'no-store' })
+    .then(r => r.ok ? r.text() : '').then(parseNotice).catch(() => null);
+}
+function renderNotice() {
+  const n = fieldNotice, el = $('#notice');
+  if (!n) { el.innerHTML = ''; return; }
+  const untilTxt = n.until && /^\d{4}-\d{2}-\d{2}$/.test(n.until)
+    ? new Date(n.until + 'T12:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : null;
+  el.innerHTML = `<section class="card notice${n.closed ? ' closed' : ''}">
+    <h3>${n.closed ? '⛔ Field closed' : '📌 Field notice'}</h3><p>${esc(n.text)}</p>
+    ${untilTxt ? `<div class="until">Through ${esc(untilTxt)}</div>` : ''}</section>`;
+}
+
 let lastKp = null;
 function renderKp(kp) {
   const t = $('#kpTile'); if (!t) return;
@@ -1091,6 +1141,9 @@ async function loadAll() {
   const forecast = getJSON(forecastUrl());
   const alerts = getJSON(`https://api.weather.gov/alerts/active?point=${FIELD.lat},${FIELD.lon}`, { headers: { Accept: 'application/geo+json' } });
   const kp = getJSON('https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json');
+  // The notice is a small local file; wait briefly for it so a "closed" notice is in the verdict
+  fieldNotice = await Promise.race([loadNotice(), new Promise(r => setTimeout(() => r(fieldNotice), 3000))]);
+  renderNotice();
 
   try {
     const d = await forecast;
