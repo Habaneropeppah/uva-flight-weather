@@ -185,6 +185,40 @@
   .pill.go { background: var(--go-bg); color: var(--go); }
   .pill.caution { background: var(--caution-bg); color: var(--caution); }
   .pill.nogo { background: var(--nogo-bg); color: var(--nogo); }
+  .pill.glare { background: var(--glare-bg); color: #a34a00; }
+
+  /* Tappable days + hour-by-hour detail */
+  .day { cursor: pointer; border-radius: 10px; transition: background .15s; }
+  .day:hover, .day:focus-visible { background: var(--sky-3); outline: none; }
+  .day.open { background: var(--sky-3); border-bottom-color: transparent; }
+  .chev { display: inline-block; color: var(--muted); font-weight: 400; transition: transform .15s; }
+  .day.open .chev { transform: rotate(90deg); }
+  .day-detail { background: var(--sky-3); border-radius: 0 0 10px 10px; margin: -6px 0 6px; padding: 4px 10px 10px; }
+  .dd-best { font-size: .92rem; padding: 6px 2px 8px; }
+  .dd-empty { color: var(--muted); padding: 8px 2px; font-size: .9rem; }
+  .dd-head, .dd-row { display: grid; grid-template-columns: 44px 92px 112px 104px 78px 1fr; gap: 8px; align-items: center; }
+  .dd-head { font-size: .7rem; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); padding: 0 8px 4px; }
+  .dd-row { background: #fff; border-radius: 8px; padding: 7px 8px; margin-top: 4px; font-size: .88rem; border-left: 4px solid var(--line); }
+  .dd-row.go { border-left-color: var(--go); }
+  .dd-row.caution { border-left-color: var(--gold); }
+  .dd-row.nogo { border-left-color: var(--nogo); }
+  .dd-row.glare { border-left-color: var(--glare); }
+  .dd-t { font-weight: 700; color: var(--navy); }
+  .muted { color: var(--muted); font-weight: 400; }
+  .dd-why { display: flex; flex-wrap: wrap; gap: 4px; }
+  .dd-why span { font-size: .75rem; padding: 2px 7px; border-radius: 999px; background: #eef2f7; }
+  .dd-why span.l1 { background: var(--caution-bg); color: #7a5000; }
+  .dd-why span.l2 { background: var(--nogo-bg); color: #8f1f26; }
+  .dd-why span.lg { background: var(--glare-bg); color: #8a3f00; }
+  @media (max-width: 760px) {
+    .chev { display: none; }
+    .dd-head { display: none; }
+    .dd-row { grid-template-columns: 40px auto 1fr; row-gap: 4px; }
+    .dd-w { grid-column: 3; text-align: right; }
+    .dd-r { grid-column: 2; }
+    .dd-x { grid-column: 3; text-align: right; }
+    .dd-why { grid-column: 1 / -1; }
+  }
   @media (max-width: 640px) {
     .day { grid-template-columns: 70px 30px 1fr; }
     .day .c4, .day .c5 { grid-column: 1 / -1; padding-left: 2px; }
@@ -276,7 +310,7 @@
   </section>
 
   <section class="card">
-    <h2>7-Day Flying Outlook</h2>
+    <h2>7-Day Flying Outlook <small>tap a day for hour-by-hour</small></h2>
     <div class="days" id="days"></div>
   </section>
 </main>
@@ -914,6 +948,16 @@ function render(d, hours, idx) {
   }).join('');
 
   /* Daily */
+  lastRender = { today, hours, idx, todayStr };
+  renderDays();
+}
+
+// 7-day outlook. Each day can be tapped open to show its hour-by-hour flying breakdown.
+let lastRender = null, openDay = null;
+function renderDays() {
+  if (!lastRender) return;
+  const { today, hours, idx, todayStr } = lastRender;
+  if (openDay && !today.time.includes(openDay)) openDay = null;
   $('#days').innerHTML = today.time.map((date, i) => {
     const dh = hours.filter(h => h.date === date && h.isDay && (date !== todayStr || hours.indexOf(h) >= idx));
     const good = dh.filter(h => h.a.lvl === 0).length;
@@ -923,15 +967,56 @@ function render(d, hours, idx) {
     const cls = over ? '' : good >= 3 ? 'go' : (good + okc) >= 2 ? 'caution' : 'nogo';
     const lab = over ? 'Daylight over' : good >= 3 ? `${good} good hrs` : (good + okc) >= 2 ? `${good + okc} flyable hrs` : 'Poor';
     const w = wx(today.weather_code[i]);
-    return `<div class="day">
-      <div><div class="dn">${dayName(date, todayStr)}</div><div class="sub">${w.text}</div></div>
+    const open = openDay === date;
+    return `<div class="day${open ? ' open' : ''}" data-date="${date}" role="button" tabindex="0" aria-expanded="${open}">
+      <div><div class="dn">${dayName(date, todayStr)} <span class="chev">›</span></div><div class="sub">${w.text}</div></div>
       <div class="ic">${w.icon}</div>
       <div><strong>${r0(today.temperature_2m_max[i])}°</strong> / ${r0(today.temperature_2m_min[i])}°<div class="sub">💧 ${r0(today.precipitation_probability_max[i])}%</div></div>
       <div class="c4">Wind up to <strong>${r0(today.wind_speed_10m_max[i])}</strong>, gusts <strong>${r0(today.wind_gusts_10m_max[i])}</strong> mph</div>
       <div class="c5"><span class="pill ${cls}">${lab}</span> ${bw ? `<span class="sub">best ${windowText(bw)}</span>` : ''}</div>
-    </div>`;
+    </div>${open ? `<div class="day-detail">${dayDetail(date)}</div>` : ''}`;
   }).join('');
 }
+
+// Hour-by-hour recommendations for one day's flying hours (8 AM to sunset, later with night flying)
+function dayDetail(date) {
+  const { hours, idx, todayStr } = lastRender;
+  const list = hours.filter((h, i) => h.date === date && (date !== todayStr || i >= idx) &&
+    h.hour >= FIELD.openHour && (h.isDay || (settings.night && h.hour <= 22)));
+  if (!list.length) return '<div class="dd-empty">No flying hours left today.</div>';
+  const bw = bestWindow(list), cw = bw ? null : bestWindow(list, 1);
+  const head = bw ? `Best window: <strong>${windowText(bw)}</strong> (${bw.n} good hr${bw.n > 1 ? 's' : ''})`
+             : cw ? `No fully good hours. Best flyable stretch: <strong>${windowText(cw)}</strong> (caution)`
+             : 'No flyable hours this day.';
+  const rows = list.map(h => {
+    const glareOnly = h.a.lvl === 0 && h.a.glare;
+    const cls = glareOnly ? 'glare' : ['go', 'caution', 'nogo'][h.a.lvl];
+    const lab = glareOnly ? 'SUN GLARE' : ['GO', 'CAUTION', 'NO-GO'][h.a.lvl];
+    const rc = runwayChoice(h.wind, h.dir).best;
+    const w = wx(h.code, h.isDay);
+    return `<div class="dd-row ${cls}">
+      <div class="dd-t">${hourLabel(h.hour)}</div>
+      <div class="dd-b"><span class="pill ${cls}">${lab}</span></div>
+      <div class="dd-w">${arrow(h.dir)} <strong>${r0(h.wind)}</strong><span class="muted">/${r0(h.gust)}</span> mph</div>
+      <div class="dd-r">${h.wind < 3 ? '<span class="muted">Calm: either direction</span>' : `Rwy ${rc.num} <span class="muted">· xw ${r0(rc.crossAbs)}</span>`}</div>
+      <div class="dd-x">${w.icon} ${r0(h.temp)}°${h.pop ? ` <span class="muted">💧${h.pop}%</span>` : ''}</div>
+      <div class="dd-why">${h.a.reasons.length ? h.a.reasons.map(r => `<span class="l${r.l}">${esc(r.msg)}</span>`).join('') : '<span>Good conditions</span>'}</div>
+    </div>`;
+  }).join('');
+  return `<div class="dd-best">${head}</div>
+    <div class="dd-head"><span>Time</span><span>Rating</span><span>Wind/gust</span><span>Runway</span><span>Temp</span><span>Why</span></div>
+    ${rows}`;
+}
+
+$('#days').addEventListener('click', e => {
+  const row = e.target.closest('.day');
+  if (!row) return;
+  openDay = openDay === row.dataset.date ? null : row.dataset.date;
+  renderDays();
+});
+$('#days').addEventListener('keydown', e => {
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.classList.contains('day')) { e.preventDefault(); e.target.click(); }
+});
 
 function renderAlerts(features) {
   const el = $('#alerts');
