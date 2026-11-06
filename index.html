@@ -100,6 +100,7 @@
   .reasons li.l1 { background: var(--caution-bg); color: #7a5000; }
   .reasons li.l2 { background: var(--nogo-bg); color: #8f1f26; }
   .window { margin-top: 8px; font-size: .95rem; }
+  .trend { margin-top: 8px; font-size: .92rem; color: var(--navy); }
   .tip { margin-top: 8px; font-size: .88rem; background: var(--sky-3); border-radius: 8px; padding: 6px 10px; color: var(--navy); }
   .window strong { color: var(--navy); }
 
@@ -312,6 +313,7 @@
           <dt>Forecast</dt><dd>NOAA weather models (HRRR, updated hourly, blended with GFS for later days) for a point about 0.2 mi from the field, at 4,495 ft</dd>
           <dt>Alerts</dt><dd>National Weather Service, Salt Lake City office, for the field's exact location</dd>
           <dt>Sun &amp; glare</dt><dd>Calculated for the field from the date and time</dd>
+          <dt>Air quality</dt><dd>Open-Meteo air quality model (US AQI) for the field</dd>
           <dt>GPS / Kp</dt><dd>NOAA Space Weather Prediction Center</dd>
           <dt>Field info</dt><dd>Runways, pilot stations, pits, windsock and field rules from club members</dd>
         </dl>
@@ -343,7 +345,7 @@
   <p><strong>For planning only.</strong> The pilot in command makes the go/no-go call. Follow the AMA Safety Code and the field rules posted at UVA Field: no flying before 8 AM, flying ends at sunset unless your aircraft is lit for night flying, and stay at or below 700 ft AGL.
   UVA Field is an FAA-Recognized Identification Area (FRIA): aircraft without Remote ID may fly here, but only inside the site boundary and within visual line of sight.
   Ratings are based on the aircraft type picked in Settings.</p>
-  <p>Data: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> forecast (CC BY 4.0),
+  <p>Data: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> forecast and air quality (CC BY 4.0),
   <a href="https://www.weather.gov/" target="_blank" rel="noopener">National Weather Service</a> alerts,
   <a href="https://www.swpc.noaa.gov/" target="_blank" rel="noopener">NOAA SWPC</a> Kp index. Refreshes every 10 minutes.
   Field imagery: Google Earth.</p>
@@ -399,6 +401,8 @@ const FIELD = {
   pilotFacingTrue: 236.5,
   // Glare when the sun is this low and this close to where pilots are looking
   glare: { maxElev: 30, halfAngle: 50, maxCloud: 80 },
+  coldPackF: 50,     // cold-battery tip at or below this temperature
+  trendHours: 4,     // how far ahead the wind trend looks
   // Satellite photo behind the compass (Google Earth, north up). cx/cy = pixel where the runways
   // cross; pxPerFt measured from the runway lengths. Set photo: null to go back to the drawn runways.
   photo: { src: 'field-photo.jpg', w: 600, h: 600, cx: 299.8, cy: 299.1, pxPerFt: 0.5493,
@@ -519,6 +523,33 @@ function isGlare(h) {
     angDiff(h.sunAz, FIELD.pilotFacingTrue) <= G.halfAngle && !(ok(h.cloud) && h.cloud >= G.maxCloud);
 }
 
+// Wind over the next few hours compared with now: picking up, easing, or steady,
+// plus a heads-up if the favored runway is likely to change
+function windTrend(now, hours, idx) {
+  const next = hours.slice(idx + 1, idx + 1 + FIELD.trendHours).filter(h => ok(h.wind));
+  if (!next.length || !ok(now.wind)) return '';
+  const peak = next.reduce((a, b) => b.wind > a.wind ? b : a);
+  const low = next.reduce((a, b) => b.wind < a.wind ? b : a);
+  const by = h => hourLabel(h.hour).replace(/a$/, ' AM').replace(/p$/, ' PM');
+  let msg;
+  if (peak.wind - now.wind >= 4)
+    msg = `📈 <strong>Wind picking up:</strong> ${r0(now.wind)} → ${r0(peak.wind)} mph by ${by(peak)}${ok(peak.gust) ? ` (gusts ${r0(peak.gust)})` : ''}`;
+  else if (now.wind - low.wind >= 4)
+    msg = `📉 <strong>Wind easing:</strong> ${r0(now.wind)} → ${r0(low.wind)} mph by ${by(low)}`;
+  else msg = `➡️ <strong>Wind speed steady</strong> around ${r0(now.wind)} mph for the next ${FIELD.trendHours} hours`;
+  // Runway change: first upcoming hour where a different runway end is favored (ignoring calm hours)
+  if (now.wind > FIELD.calmMph) {
+    const cur = runwayChoice(now.wind, now.dir).best.num;
+    const sw = next.find(h => h.wind > FIELD.calmMph && runwayChoice(h.wind, h.dir).best.num !== cur);
+    if (sw) msg += ` · wind shifts to ${cardinal(sw.dir)}: runway ${runwayChoice(sw.wind, sw.dir).best.num} likely by ${by(sw)}`;
+  }
+  return msg;
+}
+
+// US AQI categories (EPA)
+const aqiText = a => a <= 50 ? 'Good' : a <= 100 ? 'Moderate' : a <= 150 ? 'Unhealthy for sensitive groups'
+  : a <= 200 ? 'Unhealthy' : a <= 300 ? 'Very unhealthy' : 'Hazardous';
+
 // Estimated cloud base, ft above the field: about 1,000 ft for every 4.4°F of temperature/dew point spread
 function cloudBase(tempF, dewF) {
   if (!ok(tempF) || !ok(dewF)) return null;
@@ -575,7 +606,11 @@ function assess(h) {
   if (aloft && ok(h.wind) && aloft[0] - h.wind >= 12) add(1, `Stronger wind aloft (${r0(aloft[0])} mph at ${aloft[1]} ft)`);
   // Clouds that may sit below the ceiling: pilots could lose sight of the model
   const base = cloudBase(h.temp, h.dew);
-  if (ok(base) && base < FIELD.ceilingFt && ok(h.cloudLow) && h.cloudLow >= 60 && !(c === 45 || c === 48)) add(1, `Low clouds, base ~${Math.round(base / 100) * 100} ft`);
+  // Below ~400 ft with a mostly solid low layer there's no room for a normal pattern: no-go
+  if (ok(base) && base < FIELD.ceilingFt && ok(h.cloudLow) && h.cloudLow >= 60 && !(c === 45 || c === 48)) {
+    const vlow = base < 400 && h.cloudLow >= 80;
+    add(vlow ? 2 : 1, `${vlow ? 'Very low' : 'Low'} clouds, base ~${Math.round(base / 100) * 100} ft AGL (ceiling ${FIELD.ceilingFt} ft)`);
+  }
   // Field rules: no flying before 8 AM; flying ends at sunset unless the aircraft is lit for night flying
   // Sun glare is its own heads-up label, not a CAUTION: it doesn't change the rating
   let glare = false;
@@ -856,6 +891,13 @@ function render(d, hours, idx) {
   now.sunAz = sunNow.az; now.sunEl = sunNow.el;
   now.a = assess(now);
   hours.forEach(h => { h.a = assess(h); });
+  // Unhealthy air (wildfire smoke, winter inversion) right now makes it a caution day
+  const aqi = airQ && ok(airQ.us_aqi) ? airQ.us_aqi : null;
+  if (aqi !== null && aqi > 150) {
+    now.a.reasons.push({ l: 1, msg: `Unhealthy air (AQI ${r0(aqi)}): smoke or inversion haze` });
+    now.a.lvl = Math.max(now.a.lvl, 1);
+  }
+  const trend = windTrend(now, hours, idx);
 
   /* Verdict */
   const L = ['go', 'caution', 'nogo'];
@@ -880,6 +922,11 @@ function render(d, hours, idx) {
     if (now.wind < 5) tips.push('💡 Light wind: expect a faster groundspeed and longer landing roll. Plan a long, shallow approach.');
     else if (lc.head >= 8) tips.push(`💡 ${r0(lc.head)} mph headwind on runway ${lc.num}: it slows your groundspeed for an easier landing.`);
   }
+  // LiPos lose capacity and sag under load in the cold
+  if (ok(now.temp) && now.temp <= FIELD.coldPackF)
+    tips.push(`🔋 Cold packs (${r0(now.temp)}°F): LiPos lose power in the cold. Keep batteries warm until you fly, and land with extra reserve.`);
+  if (aqi !== null && aqi > 100 && aqi <= 150)
+    tips.push(`😷 Air quality is unhealthy for sensitive groups (AQI ${r0(aqi)}).`);
   // Otherwise-good conditions with the sun in pilots' eyes get their own SUN GLARE label
   const glareOnly = now.a.lvl === 0 && now.a.glare;
   const v = $('#verdict');
@@ -892,6 +939,7 @@ function render(d, hours, idx) {
       <div class="sub" style="color:var(--muted);font-size:.9rem">Rated for: ${esc(PROFILES[settings.profile].label)}${settings.night ? ', night flying with lights' : ''} · <button class="linkish" onclick="openSettings()">change</button></div>
       ${now.a.reasons.length ? `<ul class="reasons">${now.a.reasons.map(r => `<li class="l${r.l}">${esc(r.msg)}</li>`).join('')}</ul>`
                              : `<ul class="reasons"><li>Light wind, no precipitation, good visibility</li></ul>`}
+      ${trend ? `<div class="trend">${trend}</div>` : ''}
       ${tips.map(t => `<div class="tip">${esc(t)}</div>`).join('')}
       ${closed ? '' : `<div class="window">${winHtml}</div>`}
       <div class="airspace">This rates the weather only. Before you fly, check for temporary flight restrictions (TFRs),
@@ -965,6 +1013,8 @@ function render(d, hours, idx) {
       };
     })(),
     { lbl: 'UV index', val: r0(today.uv_index_max[0]), sub: 'today max', cls: today.uv_index_max[0] >= 8 ? 'warn' : '' },
+    { lbl: 'Air quality', val: aqi !== null ? `AQI ${r0(aqi)}` : '–', sub: aqi !== null ? aqiText(aqi) : 'unavailable',
+      cls: aqi > 150 ? 'bad' : aqi > 100 ? 'warn' : '' },
   ];
   $('#conditions').innerHTML = `<div class="tiles">${tiles.map(t => `<div class="tile ${t.cls || ''}"><div class="lbl">${t.lbl}</div><div class="val">${t.val}</div><div class="sub">${esc(t.sub)}</div></div>`).join('')}<div class="tile" id="kpTile"><div class="lbl">GPS / Kp index</div><div class="val">…</div><div class="sub">geomagnetic</div></div></div>`;
   if (lastKp) renderKp(lastKp);
@@ -1088,6 +1138,7 @@ function renderAlerts(features) {
    Lines starting with # are ignored. Optional first lines: "type: closed" (red banner, overrides
    the GO/NO-GO verdict) and "until: YYYY-MM-DD" (banner disappears after that date). */
 let fieldNotice = null;
+let airQ = null;   // Open-Meteo air quality "current" block: us_aqi, pm2_5
 function parseNotice(txt) {
   if (!txt || txt.trimStart().startsWith('<')) return null;   // a host's HTML error page, not our file
   let type = 'info', until = null;
@@ -1141,12 +1192,16 @@ async function loadAll() {
   const forecast = getJSON(forecastUrl());
   const alerts = getJSON(`https://api.weather.gov/alerts/active?point=${FIELD.lat},${FIELD.lon}`, { headers: { Accept: 'application/geo+json' } });
   const kp = getJSON('https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json');
+  const air = getJSON(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${FIELD.lat}&longitude=${FIELD.lon}&current=us_aqi,pm2_5&timezone=${encodeURIComponent(FIELD.tz)}`)
+    .then(j => j.current || null).catch(() => null);
   // The notice is a small local file; wait briefly for it so a "closed" notice is in the verdict
   fieldNotice = await Promise.race([loadNotice(), new Promise(r => setTimeout(() => r(fieldNotice), 3000))]);
   renderNotice();
 
   try {
     const d = await forecast;
+    // Air quality feeds the verdict; don't hold the page up long if it's slow
+    airQ = await Promise.race([air, new Promise(r => setTimeout(() => r(airQ), 3000))]);
     const hours = buildHours(d);
     const key = d.current.time.slice(0, 13);
     let idx = hours.findIndex(h => h.t.startsWith(key));
