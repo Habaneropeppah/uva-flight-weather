@@ -366,6 +366,7 @@ const FIELD = {
   // Only recommend the shorter cross runway when it cuts the crosswind by at least this much (mph)
   crossRunwayMargin: 3,
   openHour: 8,   // no flying before 8 AM
+  calmMph: 3,    // at or below this, takeoff/landing direction doesn't matter
   elevFt: 4498,  // field elevation (club figure); used for density altitude
   ceilingFt: 700, // flight clearance: 700 ft AGL
   // Four pilot stations behind a white fence on the NE edge of the main runway, just NW of the
@@ -700,7 +701,8 @@ function compassSvg(dirTrue, comp, windSpeed, sun) {
   }).join('');
   // Green LAND / TAKEOFF arrows beside the favored runway, pointing into the wind (comp.h)
   let flow = '';
-  if (comp) {
+  const calm = ok(windSpeed) && windSpeed <= FIELD.calmMph;   // no favored direction when calm
+  if (comp && !calm) {
     const r = comp.rwy, e = ext(r);
     const intoFwd = norm(comp.h) === norm(r.hdg);
     const up = intoFwd ? e.fwd : e.back, down = intoFwd ? e.back : e.fwd;
@@ -857,7 +859,9 @@ function render(d, hours, idx) {
         <div class="big">${r0(now.wind)} <small>mph</small></div>
         <div style="color:var(--muted)">from ${cardinal(now.dir)} (${r0(toMag(now.dir))}° mag) · gusts <strong style="color:var(--navy)">${r0(now.gust)} mph</strong></div>
         <dl class="kv">
-          <dt>Use runway</dt><dd>${comp.num} <span style="color:var(--muted);font-weight:400">(${comp.rwy.name.toLowerCase()})</span></dd>
+          <dt>Use runway</dt><dd>${now.wind <= FIELD.calmMph
+            ? `Calm: either direction <span style="color:var(--muted);font-weight:400">(wind ${FIELD.calmMph} mph or less)</span>`
+            : `${comp.num} <span style="color:var(--muted);font-weight:400">(${comp.rwy.name.toLowerCase()})</span>`}</dd>
           <dt>Headwind</dt><dd>${comp.head >= 0 ? r0(comp.head) + ' mph' : 'Tailwind ' + r0(-comp.head) + ' mph'}</dd>
           <dt>Crosswind</dt><dd>${r0(comp.crossAbs)} mph ${comp.crossAbs >= 1 ? 'from the ' + comp.side : ''}</dd>
           <dt>Gust crosswind</dt><dd>${r0(components(now.gust, now.dir, comp.rwy.hdg).crossAbs)} mph</dd>
@@ -998,7 +1002,7 @@ function dayDetail(date) {
       <div class="dd-t">${hourLabel(h.hour)}</div>
       <div class="dd-b"><span class="pill ${cls}">${lab}</span></div>
       <div class="dd-w">${arrow(h.dir)} <strong>${r0(h.wind)}</strong><span class="muted">/${r0(h.gust)}</span> mph</div>
-      <div class="dd-r">${h.wind < 3 ? '<span class="muted">Calm: either direction</span>' : `Rwy ${rc.num} <span class="muted">· xw ${r0(rc.crossAbs)}</span>`}</div>
+      <div class="dd-r">${h.wind <= FIELD.calmMph ? '<span class="muted">Calm: either direction</span>' : `Rwy ${rc.num} <span class="muted">· xw ${r0(rc.crossAbs)}</span>`}</div>
       <div class="dd-x">${w.icon} ${r0(h.temp)}°${h.pop ? ` <span class="muted">💧${h.pop}%</span>` : ''}</div>
       <div class="dd-why">${h.a.reasons.length ? h.a.reasons.map(r => `<span class="l${r.l}">${esc(r.msg)}</span>`).join('') : '<span>Good conditions</span>'}</div>
     </div>`;
