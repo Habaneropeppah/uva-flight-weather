@@ -111,7 +111,7 @@
   .rwys th, .rwys td { padding: 5px 6px; }
   .rwys tr.fav td { background: var(--go-bg); }
   .compass .cline { stroke: #fff; stroke-width: 2; stroke-dasharray: 8 7; }
-  .compass .rn { font-size: 8.5px; font-weight: 700; fill: var(--navy); }
+  .compass .rn { font-size: 7px; font-weight: 700; fill: var(--navy); }
   .compass .rn-bg { fill: #fff; stroke: var(--line); }
   .compass .arrow { stroke: #6cc4f5; stroke-width: 7; stroke-linecap: round; }
   .compass .arrowhead { fill: #6cc4f5; stroke: #1f7fb8; stroke-width: 1; }
@@ -731,8 +731,8 @@ function compassSvg(dirTrue, comp, windSpeed, sun) {
   const rn = FIELD.runways.map(r => {
     const e = ext(r);
     return [[r.hdg, e.fwd], [r.hdg + 180, e.back]].map(([h, d]) => {
-      const [x, y] = pt(h, d + 9);
-      return `<rect class="rn-bg" x="${x - 9}" y="${y - 6.5}" width="18" height="13" rx="3"/><text class="rn" x="${x}" y="${y + 3.2}" text-anchor="middle">${rwyNum(h + 180)}</text>`;
+      const [x, y] = pt(h, d + 8);
+      return `<rect class="rn-bg" x="${x - 7.5}" y="${y - 5.5}" width="15" height="11" rx="2.5"/><text class="rn" x="${x}" y="${y + 2.6}" text-anchor="middle">${rwyNum(h + 180)}</text>`;
     }).join('');
   }).join('');
   // Green LAND / TAKEOFF arrows beside the favored runway, pointing into the wind (comp.h)
@@ -752,7 +752,7 @@ function compassSvg(dirTrue, comp, windSpeed, sun) {
     // [x, y, keep-out radius]: number boxes (26×18), the pits roof, the windsock mast
     const obstacles = FIELD.runways.flatMap(rw => {
       const ee = ext(rw);
-      return [[...pt(rw.hdg, ee.fwd + 9), 14], [...pt(rw.hdg + 180, ee.back + 9), 14]];
+      return [[...pt(rw.hdg, ee.fwd + 8), 12], [...pt(rw.hdg + 180, ee.back + 8), 12]];
     }).concat([[px + 2, py, 16], [px + 2, py + 12, 9], [...stationsCenter, 15]]);
     const a = rad(comp.h);
     const toScreen = (X, Y) => { const dx = X - C, dy = Y - C; return [C + dx * Math.cos(a) - dy * Math.sin(a), C + dx * Math.sin(a) + dy * Math.cos(a)]; };
