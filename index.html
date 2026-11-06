@@ -23,6 +23,8 @@
     --caution-bg: #fff4d6;
     --nogo: #c8323a;
     --nogo-bg: #fde8e9;
+    --glare: #ee7a1a;
+    --glare-bg: #ffead6;
     --radius: 14px;
   }
   * { box-sizing: border-box; }
@@ -149,6 +151,10 @@
   .hr.l0 .stripe { background: var(--go); }
   .hr.l1 .stripe { background: var(--gold); }
   .hr.l2 .stripe { background: var(--nogo); }
+  .hr.gl .stripe { background: var(--glare); }
+  .verdict.glare { border-color: var(--glare); }
+  .glare .badge { background: var(--glare-bg); color: #a34a00; }
+  .reasons li.lg { background: var(--glare-bg); color: #8a3f00; }
   .hr.night { background: #e7ebf2; }
   .hr .t { font-weight: 700; margin-top: 6px; color: var(--navy); }
   .hr .d { font-size: .7rem; color: var(--muted); min-height: 1em; }
@@ -254,6 +260,7 @@
       <span><i style="background:var(--go)"></i>Good</span>
       <span><i style="background:var(--gold)"></i>Caution</span>
       <span><i style="background:var(--nogo)"></i>No-go / field closed</span>
+      <span><i style="background:var(--glare)"></i>Sun glare</span>
       <span><i style="background:var(--sky-1)"></i>Wind</span>
       <span><i style="background:var(--sky-2)"></i>Gusts</span>
     </div>
@@ -498,10 +505,12 @@ function assess(h) {
   const base = cloudBase(h.temp, h.dew);
   if (ok(base) && base < FIELD.ceilingFt && ok(h.cloudLow) && h.cloudLow >= 60 && !(c === 45 || c === 48)) add(1, `Low clouds, base ~${Math.round(base / 100) * 100} ft`);
   // Field rules: no flying before 8 AM; flying ends at sunset unless the aircraft is lit for night flying
-  if (h.isDay && h.hour >= FIELD.openHour && isGlare(h)) add(1, "Sun in pilots' eyes (low in the SW)");
+  // Sun glare is its own heads-up label, not a CAUTION: it doesn't change the rating
+  let glare = false;
+  if (h.isDay && h.hour >= FIELD.openHour && isGlare(h)) { glare = true; reasons.push({ l: 'g', msg: "Sun in pilots' eyes (low in the SW)" }); }
   if (h.hour < FIELD.openHour) add(2, 'Field closed before 8 AM');
   else if (!h.isDay) add(settings.night ? 1 : 2, settings.night ? 'After sunset: lit aircraft only' : 'After sunset');
-  return { lvl, reasons };
+  return { lvl, reasons, glare };
 }
 
 // Longest stretch of consecutive hours rated `level` or better.
@@ -779,12 +788,14 @@ function render(d, hours, idx) {
     if (now.wind < 5) tips.push('💡 Light wind: expect a faster groundspeed and longer landing roll. Plan a long, shallow approach.');
     else if (lc.head >= 8) tips.push(`💡 ${r0(lc.head)} mph headwind on runway ${lc.num}: it slows your groundspeed for an easier landing.`);
   }
+  // Otherwise-good conditions with the sun in pilots' eyes get their own SUN GLARE label
+  const glareOnly = now.a.lvl === 0 && now.a.glare;
   const v = $('#verdict');
-  v.className = 'card verdict ' + L[now.a.lvl];
+  v.className = 'card verdict ' + (glareOnly ? 'glare' : L[now.a.lvl]);
   v.innerHTML = `
-    <div class="badge">${badges[now.a.lvl]}</div>
+    <div class="badge">${glareOnly ? 'SUN GLARE' : badges[now.a.lvl]}</div>
     <div class="verdict-body">
-      <h2>${titles[now.a.lvl]}</h2>
+      <h2>${glareOnly ? "Good to fly. Heads up: the sun is in pilots' eyes" : titles[now.a.lvl]}</h2>
       <div class="sub" style="color:var(--muted);font-size:.9rem">Rated for: ${esc(PROFILES[settings.profile].label)}${settings.night ? ', night flying with lights' : ''} · <button class="linkish" onclick="openSettings()">change</button></div>
       ${now.a.reasons.length ? `<ul class="reasons">${now.a.reasons.map(r => `<li class="l${r.l}">${esc(r.msg)}</li>`).join('')}</ul>`
                              : `<ul class="reasons"><li>Light wind, no precipitation, good visibility</li></ul>`}
@@ -882,7 +893,7 @@ function render(d, hours, idx) {
   $('#hours').innerHTML = [now, ...hours.slice(idx + 1, idx + 36)].map((h, i) => {
     const w = wx(h.code, h.isDay);
     const showDate = i === 0 || h.hour === 0;
-    return `<div class="hr l${h.a.lvl} ${h.isDay ? '' : 'night'}" title="${esc(h.a.reasons.map(r => r.msg).join(' · ') || 'Good')}">
+    return `<div class="hr l${h.a.lvl} ${h.a.lvl === 0 && h.a.glare ? 'gl' : ''} ${h.isDay ? '' : 'night'}" title="${esc(h.a.reasons.map(r => r.msg).join(' · ') || 'Good')}">
       <div class="stripe"></div>
       <div class="t">${i === 0 ? 'Now' : hourLabel(h.hour)}</div>
       <div class="d">${showDate ? dayName(h.date, todayStr) : ''}</div>
