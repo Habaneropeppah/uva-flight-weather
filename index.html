@@ -319,6 +319,11 @@ const FIELD = {
   openHour: 8,   // no flying before 8 AM
   elevFt: 4498,  // field elevation (club figure); used for density altitude
   ceilingFt: 700, // flight clearance: 700 ft AGL
+  // Four pilot stations behind a white fence on the NE edge of the main runway, just NW of the
+  // runway intersection. Pilots face SW, straight across the main runway (146.55° + 90° true).
+  pilotFacingTrue: 236.5,
+  // Glare when the sun is this low and this close to where pilots are looking
+  glare: { maxElev: 30, halfAngle: 50, maxCloud: 80 },
 };
 
 // Limits are [good up to, caution up to] in mph. Above the caution limit = no-go.
@@ -409,6 +414,32 @@ function sockText(wind, gust, dirTrue) {
   return `${main}, pointing ${toward}${ok(gust) && g > s ? `, jumping to ${g >= 5 ? 'full' : g + ' stripes'} in gusts` : ''}`;
 }
 
+// Sun position (azimuth ° true from north, elevation ° above horizon) for a UTC time in ms.
+// Low-precision solar formulas, good to well under a degree, which is plenty for glare.
+function sunPos(ms, lat = FIELD.lat, lon = FIELD.lon) {
+  const r = Math.PI / 180;
+  const d = ms / 864e5 - 10957.5;                    // days since J2000.0
+  const g = (357.529 + 0.98560028 * d) * r;          // mean anomaly
+  const q = 280.459 + 0.98564736 * d;                // mean longitude
+  const L = (q + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * r;
+  const e = (23.439 - 0.00000036 * d) * r;
+  const ra = Math.atan2(Math.cos(e) * Math.sin(L), Math.cos(L));
+  const dec = Math.asin(Math.sin(e) * Math.sin(L));
+  const gmst = ((18.697374558 + 24.06570982441908 * d) % 24) * 15;
+  const H = (gmst + lon) * r - ra;                   // local hour angle
+  const la = lat * r;
+  const el = Math.asin(Math.sin(la) * Math.sin(dec) + Math.cos(la) * Math.cos(dec) * Math.cos(H));
+  const az = Math.atan2(-Math.sin(H), Math.cos(la) * Math.tan(dec) - Math.sin(la) * Math.cos(H));
+  return { az: norm(az / r), el: el / r };
+}
+const angDiff = (a, b) => Math.abs(((a - b + 540) % 360) - 180);
+// Low sun in front of the pilots (skipped when it's overcast)
+function isGlare(h) {
+  const G = FIELD.glare;
+  return ok(h.sunEl) && h.sunEl > 0 && h.sunEl <= G.maxElev &&
+    angDiff(h.sunAz, FIELD.pilotFacingTrue) <= G.halfAngle && !(ok(h.cloud) && h.cloud >= G.maxCloud);
+}
+
 // Estimated cloud base, ft above the field: about 1,000 ft for every 4.4°F of temperature/dew point spread
 function cloudBase(tempF, dewF) {
   if (!ok(tempF) || !ok(dewF)) return null;
@@ -467,6 +498,7 @@ function assess(h) {
   const base = cloudBase(h.temp, h.dew);
   if (ok(base) && base < FIELD.ceilingFt && ok(h.cloudLow) && h.cloudLow >= 60 && !(c === 45 || c === 48)) add(1, `Low clouds, base ~${Math.round(base / 100) * 100} ft`);
   // Field rules: no flying before 8 AM; flying ends at sunset unless the aircraft is lit for night flying
+  if (h.isDay && h.hour >= FIELD.openHour && isGlare(h)) add(1, "Sun in pilots' eyes (low in the SW)");
   if (h.hour < FIELD.openHour) add(2, 'Field closed before 8 AM');
   else if (!h.isDay) add(settings.night ? 1 : 2, settings.night ? 'After sunset: lit aircraft only' : 'After sunset');
   return { lvl, reasons };
@@ -523,7 +555,11 @@ function buildHours(d) {
   const H = d.hourly;
   const vu = (d.hourly_units && d.hourly_units.visibility) || 'm';
   const visToMi = vu.includes('ft') ? 1 / 5280 : 1 / 1609.344;
+  const offsetMs = (d.utc_offset_seconds || 0) * 1000;
+  // Sun position at the middle of each hour (forecast times are local to the field)
+  const sunAt = t => sunPos(Date.UTC(+t.slice(0, 4), +t.slice(5, 7) - 1, +t.slice(8, 10), +t.slice(11, 13), 30) - offsetMs);
   return H.time.map((t, i) => ({
+    ...(s => ({ sunAz: s.az, sunEl: s.el }))(sunAt(t)),
     t, date: t.slice(0, 10), hour: +t.slice(11, 13),
     temp: H.temperature_2m[i], dew: H.dew_point_2m[i], pop: H.precipitation_probability[i],
     precip: H.precipitation[i], code: H.weather_code[i], cloud: H.cloud_cover[i],
@@ -538,7 +574,7 @@ function buildHours(d) {
 }
 
 /* ---------- Render ---------- */
-function compassSvg(dirTrue, comp, windSpeed) {
+function compassSvg(dirTrue, comp, windSpeed, sun) {
   const favRwy = comp && comp.rwy;
   const C = 110, rad = a => a * Math.PI / 180;
   const pt = (a, r) => [C + r * Math.sin(rad(a)), C - r * Math.cos(rad(a))];
@@ -584,6 +620,25 @@ function compassSvg(dirTrue, comp, windSpeed) {
       <line class="cline" x1="${C}" y1="${C - e.fwd + 7}" x2="${C}" y2="${C + e.back - 7}"/>
     </g>`;
   }).join('');
+  // Pilot stations: white fence with 4 stations along the main runway's NE edge, NW of the intersection.
+  // In the main runway's rotated frame, +y points NW (hdg + 180) and -x points NE.
+  const mr = FIELD.runways[0], mHalfW = Math.max(10, 22 * mr.wid / maxWid) / 2;
+  const fx = C - mHalfW - 6, fy0 = C + 6, fLen = 24;
+  const stations = `<g transform="rotate(${mr.hdg} ${C} ${C})">
+      <rect x="${fx}" y="${fy0}" width="3.5" height="${fLen}" fill="#fff" stroke="#7d8798" stroke-width=".8"/>
+      ${[1, 2, 3].map(i => `<line x1="${fx - 1}" x2="${fx + 4.5}" y1="${fy0 + i * fLen / 4}" y2="${fy0 + i * fLen / 4}" stroke="#e0a100" stroke-width="1.2"/>`).join('')}
+    </g>`;
+  const ma = rad(mr.hdg);
+  const stationsCenter = [C + (fx + 1.75 - C) * Math.cos(ma) - (fy0 + fLen / 2 - C) * Math.sin(ma),
+                          C + (fx + 1.75 - C) * Math.sin(ma) + (fy0 + fLen / 2 - C) * Math.cos(ma)];
+  // Where the sun is right now (only while it's up), drawn on the ring in the magnetic frame
+  let sunMark = '';
+  if (sun && sun.el > 0) {
+    const [sx, sy] = pt(toMag(sun.az), 100);
+    sunMark = `<g><circle cx="${sx}" cy="${sy}" r="8" fill="#f2c230" stroke="#c99a00" stroke-width="1.5"/>
+      ${[0, 45, 90, 135, 180, 225, 270, 315].map(k => { const kr = rad(k); return `<line x1="${sx + 10 * Math.sin(kr)}" y1="${sy - 10 * Math.cos(kr)}" x2="${sx + 13 * Math.sin(kr)}" y2="${sy - 13 * Math.cos(kr)}" stroke="#c99a00" stroke-width="1.5"/>`; }).join('')}
+      <title>Sun: ${r0(sun.el)}° high</title></g>`;
+  }
   // The end lying in direction H is where you land heading H+180, so it carries that runway number
   const rn = FIELD.runways.map(r => {
     const e = ext(r);
@@ -609,7 +664,7 @@ function compassSvg(dirTrue, comp, windSpeed) {
     const obstacles = FIELD.runways.flatMap(rw => {
       const ee = ext(rw);
       return [[...pt(rw.hdg, ee.fwd + 12), 20], [...pt(rw.hdg + 180, ee.back + 12), 20]];
-    }).concat([[px + 2, py, 16], [px + 2, py + 12, 9]]);
+    }).concat([[px + 2, py, 16], [px + 2, py + 12, 9], [...stationsCenter, 15]]);
     const a = rad(comp.h);
     const toScreen = (X, Y) => { const dx = X - C, dy = Y - C; return [C + dx * Math.cos(a) - dy * Math.sin(a), C + dx * Math.sin(a) + dy * Math.cos(a)]; };
     // How much of a label would be covered (0 = completely clear)
@@ -679,8 +734,8 @@ function compassSvg(dirTrue, comp, windSpeed) {
   }
   return `<svg class="compass" viewBox="-42 -22 304 264" role="img" aria-label="Wind from ${r0(dir)} degrees magnetic. Runways ${FIELD.runways.map(r => rwyNum(r.hdg) + '/' + rwyNum(r.hdg + 180)).join(' and ')}">
     <circle class="ring" cx="${C}" cy="${C}" r="100"/>${ticks}${labels}
-    ${pits}${strips}
-    ${windArrow}${flow}${rn}${sock}
+    ${pits}${strips}${stations}
+    ${windArrow}${flow}${rn}${sock}${sunMark}
   </svg>`;
 }
 
@@ -696,6 +751,8 @@ function render(d, hours, idx) {
     gust: c.wind_gusts_10m, code: c.weather_code, isDay: c.is_day, precip: c.precipitation,
     cloud: c.cloud_cover, msl: c.pressure_msl,
   };
+  const sunNow = sunPos(Date.now());
+  now.sunAz = sunNow.az; now.sunEl = sunNow.el;
   now.a = assess(now);
   hours.forEach(h => { h.a = assess(h); });
 
@@ -742,7 +799,7 @@ function render(d, hours, idx) {
   $('#rwyLabel').textContent = FIELD.runways.map(r => `${rwyPair(r)} ${r.name.toLowerCase()}`).join(' · ');
   $('#wind').innerHTML = `
     <div class="wind-wrap">
-      ${compassSvg(now.dir, comp, now.wind)}
+      ${compassSvg(now.dir, comp, now.wind, sunNow)}
       <div class="wind-stats">
         <div class="big">${r0(now.wind)} <small>mph</small></div>
         <div style="color:var(--muted)">from ${cardinal(now.dir)} (${r0(toMag(now.dir))}° mag) · gusts <strong style="color:var(--navy)">${r0(now.gust)} mph</strong></div>
@@ -763,7 +820,7 @@ function render(d, hours, idx) {
         </table>
       </div>
     </div>
-    <div class="note"><span style="color:#b38a00;font-weight:700">Yellow</span> = where the wind is coming from. <span style="color:var(--go);font-weight:700">Green</span> = land and take off this way, into the wind. Wind in mph. The cross runway is recommended only when it cuts the crosswind by ${FIELD.crossRunwayMargin}+ mph.</div>`;
+    <div class="note"><span style="color:#b38a00;font-weight:700">Yellow</span> = where the wind is coming from. <span style="color:var(--go);font-weight:700">Green</span> = land and take off this way, into the wind. White fence = pilot stations (facing SW). ☀ = where the sun is now. Wind in mph. The cross runway is recommended only when it cuts the crosswind by ${FIELD.crossRunwayMargin}+ mph.</div>`;
 
   /* Conditions */
   const da = densityAltitude(now.temp, now.msl, elevFt);
@@ -785,6 +842,19 @@ function render(d, hours, idx) {
     })(),
     { lbl: 'Altimeter', val: ok(now.msl) ? `${(now.msl * 0.02953).toFixed(2)}"` : '–', sub: `${r0(now.msl)} hPa` },
     { lbl: 'Sun', val: `${clock(today.sunset[0])}`, sub: `Sunset · rise ${clock(today.sunrise[0])}` },
+    (() => {
+      // Glare hours during flying time: rest of today, or tomorrow once today's daylight is over
+      const glareOn = date => hours.slice(idx).filter(h => h.date === date && h.isDay && h.hour >= FIELD.openHour && isGlare(h));
+      const daylightLeft = hours.slice(idx).some(h => h.date === todayStr && h.isDay);
+      const day = daylightLeft ? todayStr : hours.find((h, i) => i > idx && h.date !== todayStr)?.date;
+      const g = day ? glareOn(day) : [];
+      const when = daylightLeft ? '' : 'Tomorrow ';
+      const active = isGlare(now) && now.isDay;
+      return {
+        lbl: 'Sun glare', val: g.length ? `${when}${hourLabel(g[0].hour)}–${hourLabel((g[g.length - 1].hour + 1) % 24)}` : `None ${daylightLeft ? 'today' : 'tomorrow'}`,
+        sub: active ? "Now: sun is in pilots' eyes" : 'Pilots face SW', cls: active ? 'warn' : '',
+      };
+    })(),
     { lbl: 'UV index', val: r0(today.uv_index_max[0]), sub: 'today max', cls: today.uv_index_max[0] >= 8 ? 'warn' : '' },
   ];
   $('#conditions').innerHTML = `<div class="tiles">${tiles.map(t => `<div class="tile ${t.cls || ''}"><div class="lbl">${t.lbl}</div><div class="val">${t.val}</div><div class="sub">${esc(t.sub)}</div></div>`).join('')}<div class="tile" id="kpTile"><div class="lbl">GPS / Kp index</div><div class="val">…</div><div class="sub">geomagnetic</div></div></div>`;
