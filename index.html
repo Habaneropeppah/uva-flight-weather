@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flight Weather · Utah Valley Aeromodelers</title>
+<meta name="description" content="Flying weather for UVA Field, Saratoga Springs, Utah: wind, gusts, crosswind, wind aloft and a go/no-go outlook for RC pilots.">
+<link rel="icon" href="https://utahvalleyaeromodelers.com/logo.svg">
+<style>
+  :root {
+    --navy: #1b2130;
+    --ink: #0b0d12;
+    --sky-1: #3f74b8;
+    --sky-2: #9cc0e8;
+    --sky-3: #f4f8fd;
+    --gold: #f2c230;
+    --muted: #5d6778;
+    --line: #dfe5ee;
+    --card: #ffffff;
+    --go: #1f8f4e;
+    --go-bg: #e5f5ec;
+    --caution: #b97800;
+    --caution-bg: #fff4d6;
+    --nogo: #c8323a;
+    --nogo-bg: #fde8e9;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink);
+    background: var(--sky-3);
+    line-height: 1.4;
+  }
+  header {
+    background: linear-gradient(160deg, var(--navy) 0%, var(--sky-1) 70%, var(--sky-2) 130%);
+    color: #fff;
+    padding: 18px 20px 22px;
+  }
+  .head-inner, main, footer { max-width: 1100px; margin: 0 auto; }
+  .head-inner { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .head-inner img { width: 56px; height: 56px; border-radius: 50%; background: #fff; flex: none; }
+  .head-title { flex: 1; min-width: 200px; }
+  .head-title h1 { margin: 0; font-size: 1.4rem; letter-spacing: .2px; }
+  .head-title p { margin: 2px 0 0; opacity: .85; font-size: .9rem; }
+  .fria { display: inline-block; vertical-align: middle; margin-left: 6px; font-size: .7rem; font-weight: 800;
+    letter-spacing: .6px; padding: 3px 8px; border-radius: 999px; background: var(--gold); color: var(--navy); cursor: help; }
+  .head-actions { display: flex; gap: 8px; align-items: center; }
+  .head-actions .updated { font-size: .8rem; opacity: .85; margin-right: 4px; }
+  button {
+    font: inherit; cursor: pointer; border-radius: 10px; border: 1px solid transparent;
+    padding: 8px 12px; background: rgba(255,255,255,.15); color: inherit;
+  }
+  header button { border-color: rgba(255,255,255,.35); color: #fff; }
+  header button:hover { background: rgba(255,255,255,.28); }
+  main { padding: 16px; display: grid; gap: 16px; }
+  main > *, .grid2 > * { min-width: 0; }
+  .card {
+    background: var(--card); border-radius: var(--radius); padding: 16px 18px;
+    box-shadow: 0 1px 2px rgba(16,24,40,.06), 0 1px 8px rgba(16,24,40,.05);
+  }
+  .card h2 { margin: 0 0 12px; font-size: 1rem; color: var(--navy); text-transform: uppercase; letter-spacing: .6px; }
+  .card h2 small { text-transform: none; letter-spacing: 0; color: var(--muted); font-weight: 400; margin-left: 6px; }
+  .grid2 { display: grid; gap: 16px; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 800px) { .grid2 { grid-template-columns: 1fr; } }
+
+  /* Alerts */
+  .alert { border-left: 6px solid var(--nogo); background: var(--nogo-bg); }
+  .alert h3 { margin: 0 0 4px; font-size: 1rem; color: var(--nogo); }
+  .alert p { margin: 0; font-size: .9rem; }
+
+  /* Verdict */
+  .verdict { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; border-left: 8px solid var(--line); }
+  .verdict.go { border-color: var(--go); }
+  .verdict.caution { border-color: var(--caution); }
+  .verdict.nogo { border-color: var(--nogo); }
+  .badge {
+    font-weight: 800; font-size: 1.6rem; letter-spacing: 1px; padding: 10px 18px; border-radius: 12px; flex: none;
+  }
+  .go .badge, .badge.go { background: var(--go-bg); color: var(--go); }
+  .caution .badge, .badge.caution { background: var(--caution-bg); color: var(--caution); }
+  .nogo .badge, .badge.nogo { background: var(--nogo-bg); color: var(--nogo); }
+  .verdict-body { flex: 1; min-width: 240px; }
+  .verdict-body h2 { margin: 0 0 4px; text-transform: none; letter-spacing: 0; font-size: 1.25rem; }
+  .reasons { margin: 6px 0 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px; }
+  .reasons li { font-size: .85rem; padding: 3px 9px; border-radius: 999px; background: #eef2f7; }
+  .reasons li.l1 { background: var(--caution-bg); color: #7a5000; }
+  .reasons li.l2 { background: var(--nogo-bg); color: #8f1f26; }
+  .window { margin-top: 8px; font-size: .95rem; }
+  .tip { margin-top: 8px; font-size: .88rem; background: var(--sky-3); border-radius: 8px; padding: 6px 10px; color: var(--navy); }
+  .window strong { color: var(--navy); }
+
+  /* Wind */
+  .wind-wrap { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  .compass { width: min(100%, 460px); height: auto; aspect-ratio: 304 / 264; flex: none; }
+  .compass .ring { fill: var(--sky-3); stroke: var(--line); stroke-width: 2; }
+  .compass .tick { stroke: #b8c3d3; stroke-width: 1.5; }
+  .compass .cl { font-size: 13px; font-weight: 700; fill: var(--muted); }
+  .compass .rwy { fill: #3a4253; }
+  .compass .alt .rwy { fill: #8b95a7; }
+  .compass .flow { stroke: var(--go); stroke-width: 3.5; stroke-linecap: round; }
+  .compass .flowhead { fill: var(--go); }
+  .compass .windtxt { font-size: 8px; font-weight: 800; fill: #8a6a00; letter-spacing: .4px;
+    paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; }
+  .compass .flowtxt { font-size: 8.5px; font-weight: 800; fill: var(--go); letter-spacing: .4px;
+    paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; }
+  .rwys { margin-top: 10px; font-size: .85rem; }
+  .rwys th, .rwys td { padding: 5px 6px; }
+  .rwys tr.fav td { background: var(--go-bg); }
+  .compass .cline { stroke: #fff; stroke-width: 2; stroke-dasharray: 8 7; }
+  .compass .rn { font-size: 12px; font-weight: 700; fill: var(--navy); }
+  .compass .rn-bg { fill: #fff; stroke: var(--line); }
+  .compass .arrow { stroke: var(--gold); stroke-width: 7; stroke-linecap: round; }
+  .compass .arrowhead { fill: var(--gold); stroke: #9c7a10; stroke-width: 1; }
+  .wind-stats { flex: 1; min-width: 260px; }
+  .wind-wrap { justify-content: center; gap: 24px; }
+  .stack { display: grid; gap: 16px; align-content: start; }
+  .big { font-size: 2.4rem; font-weight: 800; line-height: 1; color: var(--navy); }
+  .big small { font-size: 1rem; font-weight: 600; color: var(--muted); }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin-top: 10px; font-size: .95rem; }
+  .kv dt { color: var(--muted); }
+  .kv dd { margin: 0; font-weight: 600; }
+  .note { font-size: .8rem; color: var(--muted); margin-top: 10px; }
+  .note a, .linkish { color: var(--sky-1); cursor: pointer; text-decoration: underline; background: none; border: 0; padding: 0; font-size: inherit; }
+
+  /* Tiles */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+  .tile { background: var(--sky-3); border-radius: 10px; padding: 10px 12px; }
+  .tile .lbl { font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  .tile .val { font-size: 1.35rem; font-weight: 700; color: var(--navy); }
+  .tile .sub { font-size: .8rem; color: var(--muted); }
+  .tile.warn { background: var(--caution-bg); }
+  .tile.bad { background: var(--nogo-bg); }
+
+  /* Aloft */
+  .aloft { width: 100%; border-collapse: collapse; font-size: .95rem; }
+  .aloft th, .aloft td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); }
+  .aloft th { font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; font-weight: 600; }
+  .dir-arrow { display: inline-block; width: 1em; text-align: center; color: var(--sky-1); font-weight: 900; }
+
+  /* Hourly */
+  .hours { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; scroll-snap-type: x proximity; }
+  .hr {
+    flex: none; width: 74px; text-align: center; border-radius: 10px; background: var(--sky-3);
+    padding: 0 0 8px; overflow: hidden; scroll-snap-align: start; font-size: .82rem;
+  }
+  .hr .stripe { height: 6px; }
+  .hr.l0 .stripe { background: var(--go); }
+  .hr.l1 .stripe { background: var(--gold); }
+  .hr.l2 .stripe { background: var(--nogo); }
+  .hr.night { background: #e7ebf2; }
+  .hr .t { font-weight: 700; margin-top: 6px; color: var(--navy); }
+  .hr .d { font-size: .7rem; color: var(--muted); min-height: 1em; }
+  .hr .ic { font-size: 1.3rem; margin: 2px 0; }
+  .hr .tmp { font-weight: 600; }
+  .hr .wbar { height: 46px; display: flex; align-items: flex-end; justify-content: center; gap: 3px; margin: 6px 0 4px; }
+  .hr .wbar span { width: 10px; border-radius: 3px 3px 0 0; }
+  .hr .wbar .s { background: var(--sky-1); }
+  .hr .wbar .g { background: var(--sky-2); }
+  .hr .ws { font-weight: 600; }
+  .hr .pp { color: var(--sky-1); font-size: .75rem; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: .8rem; color: var(--muted); margin-top: 6px; }
+  .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -2px; margin-right: 4px; }
+
+  /* Daily */
+  .days { display: grid; gap: 6px; }
+  .day {
+    display: grid; grid-template-columns: 90px 36px 90px 1fr 1fr; gap: 10px; align-items: center;
+    padding: 10px 8px; border-bottom: 1px solid var(--line); font-size: .92rem;
+  }
+  .day:last-child { border-bottom: 0; }
+  .day .dn { font-weight: 700; color: var(--navy); }
+  .day .ic { font-size: 1.4rem; text-align: center; }
+  .day .sub { color: var(--muted); font-size: .8rem; }
+  .pill { display: inline-block; font-size: .78rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+  .pill.go { background: var(--go-bg); color: var(--go); }
+  .pill.caution { background: var(--caution-bg); color: var(--caution); }
+  .pill.nogo { background: var(--nogo-bg); color: var(--nogo); }
+  @media (max-width: 640px) {
+    .day { grid-template-columns: 70px 30px 1fr; }
+    .day .c4, .day .c5 { grid-column: 1 / -1; padding-left: 2px; }
+  }
+
+  /* Misc */
+  .err { background: var(--nogo-bg); color: #8f1f26; }
+  .loading { color: var(--muted); }
+  footer { padding: 4px 16px 30px; font-size: .78rem; color: var(--muted); }
+  footer a { color: var(--sky-1); }
+
+  dialog { border: 0; border-radius: var(--radius); padding: 0; max-width: 460px; width: calc(100% - 32px); }
+  dialog::backdrop { background: rgba(11,13,18,.5); }
+  dialog form { padding: 20px; display: grid; gap: 14px; }
+  dialog h2 { margin: 0; color: var(--navy); }
+  dialog label { display: grid; gap: 4px; font-weight: 600; font-size: .9rem; }
+  dialog select, dialog input { font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; }
+  dialog .hint { font-weight: 400; color: var(--muted); font-size: .8rem; }
+  dialog .row { display: flex; gap: 8px; justify-content: flex-end; }
+  dialog button { background: #eef2f7; color: var(--ink); }
+  dialog button.primary { background: var(--navy); color: #fff; }
+  .limits { font-size: .82rem; background: var(--sky-3); border-radius: 8px; padding: 8px 10px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="head-inner">
+    <img src="https://utahvalleyaeromodelers.com/logo.svg" alt="Utah Valley Aeromodelers logo">
+    <div class="head-title">
+      <h1>Flight Weather <span class="fria" title="FAA-Recognized Identification Area: aircraft without Remote ID may fly here, within the site boundary and visual line of sight">FAA FRIA</span></h1>
+      <p>UVA Field (Jordan River Model Port) · Saratoga Springs, Utah · <span id="elev">elev. –</span> · ceiling 700 ft AGL</p>
+    </div>
+    <div class="head-actions">
+      <span class="updated" id="updated">Loading…</span>
+      <button id="refreshBtn" title="Refresh now" aria-label="Refresh">⟳</button>
+      <button id="settingsBtn" title="Settings" aria-label="Settings">⚙ Settings</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div id="alerts"></div>
+
+  <section class="card verdict" id="verdict">
+    <span class="loading">Fetching the latest weather for the field…</span>
+  </section>
+
+  <section class="card">
+    <h2>Wind &amp; Runway <small id="rwyLabel"></small></h2>
+    <div id="wind"></div>
+  </section>
+
+  <div class="grid2">
+    <section class="card">
+      <h2>Conditions Now</h2>
+      <div id="conditions"></div>
+    </section>
+    <div class="stack">
+      <section class="card">
+        <h2>Wind Aloft <small>up to the 700 ft AGL ceiling · this hour</small></h2>
+        <div id="aloft"></div>
+      </section>
+      <section class="card">
+        <h2>Observed Nearby <small>actual reports</small></h2>
+        <div id="obs"><span class="loading">Loading…</span></div>
+      </section>
+    </div>
+  </div>
+
+  <section class="card">
+    <h2>Hour by Hour <small>next 36 hours</small></h2>
+    <div class="hours" id="hours"></div>
+    <div class="legend">
+      <span><i style="background:var(--go)"></i>Good</span>
+      <span><i style="background:var(--gold)"></i>Caution</span>
+      <span><i style="background:var(--nogo)"></i>No-go / field closed</span>
+      <span><i style="background:var(--sky-1)"></i>Wind</span>
+      <span><i style="background:var(--sky-2)"></i>Gusts</span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>7-Day Flying Outlook</h2>
+    <div class="days" id="days"></div>
+  </section>
+</main>
+
+<footer>
+  <p><strong>For planning only.</strong> The pilot in command makes the go/no-go call. Follow the AMA Safety Code and the field rules posted at UVA Field: no flying before 8 AM, flying ends at sunset unless your aircraft is lit for night flying, and stay at or below 700 ft AGL.
+  UVA Field is an FAA-Recognized Identification Area (FRIA): aircraft without Remote ID may fly here, but only inside the site boundary and within visual line of sight.
+  Ratings are based on the aircraft type picked in Settings.</p>
+  <p>Data: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> forecast (CC BY 4.0),
+  <a href="https://www.weather.gov/" target="_blank" rel="noopener">National Weather Service</a> alerts &amp; observations,
+  <a href="https://www.swpc.noaa.gov/" target="_blank" rel="noopener">NOAA SWPC</a> Kp index. Refreshes every 10 minutes.</p>
+</footer>
+
+<dialog id="settings">
+  <form method="dialog" id="settingsForm">
+    <h2>Settings</h2>
+    <label>What are you flying?
+      <select name="profile" id="profileSel"></select>
+      <span class="hint">Wind limits change with the aircraft type.</span>
+    </label>
+    <div class="limits" id="limitsText"></div>
+    <label style="display:flex;gap:10px;align-items:flex-start;font-weight:600">
+      <input type="checkbox" id="nightChk" style="margin-top:3px">
+      <span>I fly at night with a lit aircraft (LEDs)
+        <span class="hint" style="display:block">Without this, flying ends at sunset. With it, hours after sunset are rated Caution instead of No-go. The field is closed before 8 AM either way.</span>
+      </span>
+    </label>
+    <div class="row">
+      <button value="cancel" formnovalidate>Cancel</button>
+      <button value="save" class="primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+/* ---------- Configuration ---------- */
+const FIELD = {
+  name: 'UVA Field',
+  lat: 40.363372,
+  lon: -111.901728,
+  tz: 'America/Denver',
+  station: 'KPVU',        // Provo Municipal Airport, the closest NWS reporting station
+  // Magnetic variation at Saratoga Springs is about 10.5° E. Forecast wind direction is TRUE.
+  magVar: 10.5,
+  // Headings measured in Google Earth (true) and converted to magnetic: true - 10.5°.
+  // `back` = share of the runway's length on the (hdg + 180) side of where the two runways cross,
+  // measured from satellite imagery: the X sits about 2/3 of the way down the main runway from its NW end.
+  runways: [
+    { name: 'Main',  hdg: 136, trueHdg: 146.55, len: 553, wid: 50, back: 0.68 },   // 14/32
+    { name: 'Cross', hdg: 176, trueHdg: 186.54, len: 354, wid: 30, back: 0.55 },   // 18/36
+  ],
+  // Pits/pavilion: ~160 ft east of the runway intersection, joined by a taxiway
+  pits: { bearing: 90 - 10.5, distFt: 160 },
+  // Only recommend the shorter cross runway when it cuts the crosswind by at least this much (mph)
+  crossRunwayMargin: 3,
+  openHour: 8,   // no flying before 8 AM
+  elevFt: 4498,  // field elevation (club figure); used for density altitude
+  ceilingFt: 700, // flight clearance: 700 ft AGL
+};
+
+// Limits are [good up to, caution up to] in mph. Above the caution limit = no-go.
+const PROFILES = {
+  park:  { label: 'Park flyer / foamie / micro',      wind: [6, 10],  gust: [10, 15], xwind: [4, 7] },
+  glider: { label: 'Powered glider',                  wind: [18, 25], gust: [25, 32], xwind: [10, 15] },
+  sport: { label: 'Sport / trainer (typical club plane)', wind: [10, 15], gust: [15, 22], xwind: [7, 11] },
+  // EDFs land fast: a steady headwind helps, near-calm air means a faster, longer landing
+  edf:   { label: 'EDF jet',                          wind: [12, 18], gust: [18, 25], xwind: [8, 12], landingTips: true },
+  large: { label: 'Giant scale / gas / turbine jet',   wind: [14, 20], gust: [20, 28], xwind: [10, 15] },
+  heli:  { label: 'Helicopter / multirotor',           wind: [10, 16], gust: [15, 22], xwind: [99, 99] },
+};
+
+const DEFAULTS = { profile: 'sport', night: false };
+const REFRESH_MS = 10 * 60 * 1000;
+
+/* ---------- Helpers ---------- */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const ok = v => v !== null && v !== undefined && !Number.isNaN(v);
+const r0 = v => ok(v) ? Math.round(v) : '–';
+const CARD16 = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+const norm = d => ((d % 360) + 360) % 360;
+const cardinal = d => ok(d) ? CARD16[Math.round(norm(d) / 22.5) % 16] : '–';
+const rwyNum = h => String(Math.round(norm(h) / 10) % 36 || 36).padStart(2, '0');
+const hourLabel = h => (h % 12 || 12) + (h < 12 ? 'a' : 'p');
+const clock = iso => { const h = +iso.slice(11, 13), m = iso.slice(14, 16); return `${h % 12 || 12}:${m} ${h < 12 ? 'AM' : 'PM'}`; };
+const dayName = (date, todayStr) => {
+  if (date === todayStr) return 'Today';
+  const d = new Date(date + 'T12:00:00');
+  const t = new Date(todayStr + 'T12:00:00');
+  if ((d - t) / 864e5 === 1) return 'Tomorrow';
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+};
+// Arrow pointing the way the wind is blowing TO
+const arrow = dir => ok(dir) ? `<span class="dir-arrow" style="transform:rotate(${dir + 180}deg)">↑</span>` : '';
+
+const WMO = {
+  0: ['Clear', '☀️', '🌙'], 1: ['Mostly clear', '🌤️', '🌙'], 2: ['Partly cloudy', '⛅', '☁️'], 3: ['Overcast', '☁️'],
+  45: ['Fog', '🌫️'], 48: ['Freezing fog', '🌫️'],
+  51: ['Light drizzle', '🌦️'], 53: ['Drizzle', '🌦️'], 55: ['Heavy drizzle', '🌧️'], 56: ['Freezing drizzle', '🌧️'], 57: ['Freezing drizzle', '🌧️'],
+  61: ['Light rain', '🌦️'], 63: ['Rain', '🌧️'], 65: ['Heavy rain', '🌧️'], 66: ['Freezing rain', '🌧️'], 67: ['Freezing rain', '🌧️'],
+  71: ['Light snow', '🌨️'], 73: ['Snow', '🌨️'], 75: ['Heavy snow', '❄️'], 77: ['Snow grains', '🌨️'],
+  80: ['Rain showers', '🌦️'], 81: ['Rain showers', '🌧️'], 82: ['Heavy showers', '⛈️'], 85: ['Snow showers', '🌨️'], 86: ['Snow showers', '❄️'],
+  95: ['Thunderstorm', '⛈️'], 96: ['Thunderstorm, hail', '⛈️'], 99: ['Thunderstorm, hail', '⛈️'],
+};
+const wx = (code, isDay = 1) => { const w = WMO[code] || ['—', '❔']; return { text: w[0], icon: (!isDay && w[2]) ? w[2] : w[1] }; };
+
+/* ---------- Settings ---------- */
+function loadSettings() {
+  try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem('uva-flight-wx') || '{}') }; }
+  catch { return { ...DEFAULTS }; }
+}
+let settings = loadSettings();
+function saveSettings() { localStorage.setItem('uva-flight-wx', JSON.stringify(settings)); }
+
+/* ---------- Flying math ---------- */
+// Wind direction from the forecast is TRUE; runway headings are MAGNETIC.
+const toMag = trueDir => norm(trueDir - FIELD.magVar);
+
+function components(speed, dirTrue, rwyMag) {
+  const dir = toMag(dirTrue);
+  const ends = [rwyMag, norm(rwyMag + 180)].map(h => {
+    const a = (dir - h) * Math.PI / 180;
+    return { h, head: speed * Math.cos(a), cross: speed * Math.sin(a) };
+  });
+  const best = ends[0].head >= ends[1].head ? ends[0] : ends[1];
+  return { ...best, crossAbs: Math.abs(best.cross), side: best.cross > 0 ? 'right' : 'left', num: rwyNum(best.h) };
+}
+
+// Components for every runway, plus the one to use (main unless the cross runway is clearly better)
+function runwayChoice(speed, dirTrue) {
+  const all = FIELD.runways.map(r => ({ ...components(speed, dirTrue, r.hdg), rwy: r }));
+  let best = all[0];
+  for (const c of all.slice(1)) {
+    if (c.crossAbs < best.crossAbs - FIELD.crossRunwayMargin) best = c;
+  }
+  return { best, all };
+}
+
+// What a standard windsock should look like: each of its 5 stripes fills at about 3 knots
+function sockText(wind, gust, dirTrue) {
+  const stripes = v => Math.min(5, Math.round(v * 0.869 / 3));
+  if (!ok(wind) || wind < 2) return 'Hanging limp (calm)';
+  const s = stripes(wind), g = stripes(gust);
+  const toward = cardinal(dirTrue + 180);
+  const main = s >= 5 ? 'Fully extended' : `About ${s || 1} of 5 stripes`;
+  return `${main}, pointing ${toward}${ok(gust) && g > s ? `, jumping to ${g >= 5 ? 'full' : g + ' stripes'} in gusts` : ''}`;
+}
+
+// Estimated cloud base, ft above the field: about 1,000 ft for every 4.4°F of temperature/dew point spread
+function cloudBase(tempF, dewF) {
+  if (!ok(tempF) || !ok(dewF)) return null;
+  return Math.max(0, (tempF - dewF) / 4.4 * 1000);
+}
+
+function densityAltitude(tempF, mslHpa, elevFt) {
+  if (!ok(tempF) || !ok(mslHpa)) return null;
+  const altimeter = mslHpa * 0.02953;
+  const pa = elevFt + (29.92 - altimeter) * 1000;
+  const tc = (tempF - 32) * 5 / 9;
+  const isa = 15 - 2 * pa / 1000;
+  return pa + 120 * (tc - isa);
+}
+
+function assess(h) {
+  const P = PROFILES[settings.profile] || PROFILES.sport;
+  const reasons = [];
+  let lvl = 0;
+  const add = (l, msg) => { if (l > 0) reasons.push({ l, msg }); lvl = Math.max(lvl, l); };
+  const grade = (v, [g, c]) => !ok(v) ? 0 : v <= g ? 0 : v <= c ? 1 : 2;
+
+  add(grade(h.wind, P.wind), `Wind ${r0(h.wind)} mph`);
+  add(grade(h.gust, P.gust), `Gusts ${r0(h.gust)} mph`);
+  if (P.xwind[0] < 99 && ok(h.wind) && ok(h.dir)) {
+    const { best } = runwayChoice(h.wind, h.dir);
+    add(grade(best.crossAbs, P.xwind), `Crosswind ${r0(best.crossAbs)} mph on rwy ${best.num}`);
+  }
+  const spread = h.gust - h.wind;
+  if (spread >= 12) add(2, `Very gusty (${r0(spread)} mph swings)`);
+  else if (spread >= 8) add(1, `Gusty (${r0(spread)} mph swings)`);
+
+  const c = h.code;
+  if ([95, 96, 99].includes(c)) add(2, 'Thunderstorms');
+  else if (c >= 56 && c <= 86) add(2, wx(c).text);
+  else if (c >= 51 && c <= 55) add(1, wx(c).text);
+  else if (c === 45 || c === 48) add(2, 'Fog');
+  if (ok(h.precip) && h.precip >= 0.01 && !(c >= 51)) add(1, 'Some precipitation');
+  if (ok(h.pop)) {
+    if (h.pop >= 60) add(2, `${h.pop}% chance of precip`);
+    else if (h.pop >= 30) add(1, `${h.pop}% chance of precip`);
+  }
+  if (ok(h.vis)) {
+    if (h.vis < 1.5) add(2, `Visibility ${h.vis.toFixed(1)} mi`);
+    else if (h.vis < 4) add(1, `Visibility ${h.vis.toFixed(1)} mi`);
+  }
+  if (ok(h.temp) && ok(h.dew) && h.temp - h.dew <= 3 && !(c === 45 || c === 48)) add(1, 'Fog or dew likely');
+  if (ok(h.temp)) {
+    if (h.temp <= 20) add(1, `Cold (${r0(h.temp)}°F): keep LiPos warm`);
+    else if (h.temp >= 100) add(1, `Hot (${r0(h.temp)}°F): watch motor & battery temps`);
+  }
+  // Wind aloft, up to the field's 700 ft AGL ceiling (the forecast's highest level below it is 180 m ≈ 590 ft)
+  const aloft = [[h.w120, 400], [h.w180, 590]].filter(([v]) => ok(v)).sort((p, q) => q[0] - p[0])[0];
+  if (aloft && ok(h.wind) && aloft[0] - h.wind >= 12) add(1, `Stronger wind aloft (${r0(aloft[0])} mph at ${aloft[1]} ft)`);
+  // Clouds that may sit below the ceiling: pilots could lose sight of the model
+  const base = cloudBase(h.temp, h.dew);
+  if (ok(base) && base < FIELD.ceilingFt && ok(h.cloudLow) && h.cloudLow >= 60 && !(c === 45 || c === 48)) add(1, `Low clouds, base ~${Math.round(base / 100) * 100} ft`);
+  // Field rules: no flying before 8 AM; flying ends at sunset unless the aircraft is lit for night flying
+  if (h.hour < FIELD.openHour) add(2, 'Field closed before 8 AM');
+  else if (!h.isDay) add(settings.night ? 1 : 2, settings.night ? 'After sunset: lit aircraft only' : 'After sunset');
+  return { lvl, reasons };
+}
+
+// Longest stretch of consecutive hours rated `level` or better.
+// Closed hours and (without night flying) dark hours are already rated no-go.
+function bestWindow(hours, level = 0) {
+  let best = null, cur = null;
+  for (const h of hours) {
+    if (h.a.lvl <= level) {
+      if (!cur) cur = { start: h, end: h, n: 0 };
+      cur.end = h; cur.n++;
+      if (!best || cur.n > best.n) best = { ...cur };
+    } else cur = null;
+  }
+  return best;
+}
+// Earliest stretch of at least `min` consecutive good hours
+function firstWindow(hours, min = 2, level = 0) {
+  let cur = null;
+  for (const h of hours) {
+    if (h.a.lvl <= level) {
+      if (!cur) cur = { start: h, end: h, n: 0 };
+      cur.end = h; cur.n++;
+    } else {
+      if (cur && cur.n >= min) return cur;
+      cur = null;
+    }
+  }
+  return cur && cur.n >= min ? cur : null;
+}
+const windowText = w => `${hourLabel(w.start.hour)}–${hourLabel((w.end.hour + 1) % 24)}`;
+
+/* ---------- Data ---------- */
+function forecastUrl() {
+  const p = new URLSearchParams({
+    latitude: FIELD.lat, longitude: FIELD.lon, timezone: FIELD.tz, forecast_days: 7,
+    wind_speed_unit: 'mph', temperature_unit: 'fahrenheit', precipitation_unit: 'inch',
+    current: 'temperature_2m,relative_humidity_2m,apparent_temperature,dew_point_2m,is_day,precipitation,weather_code,cloud_cover,pressure_msl,wind_speed_10m,wind_direction_10m,wind_gusts_10m',
+    hourly: 'temperature_2m,dew_point_2m,precipitation_probability,precipitation,weather_code,cloud_cover,visibility,wind_speed_10m,wind_direction_10m,wind_gusts_10m,wind_speed_80m,wind_direction_80m,wind_speed_120m,wind_direction_120m,wind_speed_180m,wind_direction_180m,cloud_cover_low,is_day,pressure_msl',
+    daily: 'weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max,precipitation_probability_max,wind_speed_10m_max,wind_gusts_10m_max',
+  });
+  return 'https://api.open-meteo.com/v1/forecast?' + p;
+}
+
+async function getJSON(url, opts) {
+  const r = await fetch(url, opts);
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  return r.json();
+}
+
+function buildHours(d) {
+  const H = d.hourly;
+  const vu = (d.hourly_units && d.hourly_units.visibility) || 'm';
+  const visToMi = vu.includes('ft') ? 1 / 5280 : 1 / 1609.344;
+  return H.time.map((t, i) => ({
+    t, date: t.slice(0, 10), hour: +t.slice(11, 13),
+    temp: H.temperature_2m[i], dew: H.dew_point_2m[i], pop: H.precipitation_probability[i],
+    precip: H.precipitation[i], code: H.weather_code[i], cloud: H.cloud_cover[i],
+    vis: ok(H.visibility[i]) ? H.visibility[i] * visToMi : null,
+    wind: H.wind_speed_10m[i], dir: H.wind_direction_10m[i], gust: H.wind_gusts_10m[i],
+    w80: H.wind_speed_80m[i], d80: H.wind_direction_80m[i],
+    w120: H.wind_speed_120m[i], d120: H.wind_direction_120m[i],
+    w180: H.wind_speed_180m[i], d180: H.wind_direction_180m[i],
+    cloudLow: H.cloud_cover_low[i],
+    isDay: H.is_day[i], msl: H.pressure_msl[i],
+  }));
+}
+
+/* ---------- Render ---------- */
+function compassSvg(dirTrue, comp, windSpeed) {
+  const favRwy = comp && comp.rwy;
+  const C = 110, rad = a => a * Math.PI / 180;
+  const pt = (a, r) => [C + r * Math.sin(rad(a)), C - r * Math.cos(rad(a))];
+  // Draw everything in magnetic so it lines up with the runway
+  const dir = ok(dirTrue) ? toMag(dirTrue) : null;
+  let ticks = '';
+  for (let a = 0; a < 360; a += 30) {
+    const [x1, y1] = pt(a, 100), [x2, y2] = pt(a, a % 90 ? 93 : 88);
+    ticks += `<line class="tick" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`;
+  }
+  const labels = ['N', 'E', 'S', 'W'].map((l, i) => { const [x, y] = pt(i * 90, 78); return `<text class="cl" x="${x}" y="${y + 5}" text-anchor="middle">${l}</text>`; }).join('');
+  // Runways drawn to scale (longest = 104 px), crossing at the compass center like the real X.
+  // In each rotated group "up" points along the runway heading. Main drawn last so it sits on top.
+  const maxLen = Math.max(...FIELD.runways.map(r => r.len));
+  const maxWid = Math.max(...FIELD.runways.map(r => r.wid));
+  const pxPerFt = 104 / maxLen;
+  const ext = r => { const L = r.len * pxPerFt; return { fwd: (1 - r.back) * L, back: r.back * L }; };
+  // Pits marker + taxiway
+  const pitsR = FIELD.pits.distFt * pxPerFt;
+  const [px, py] = pt(FIELD.pits.bearing, pitsR);
+  const pits = `<line x1="${C}" y1="${C}" x2="${px}" y2="${py}" stroke="#8b95a7" stroke-width="4"/>
+    <rect x="${px - 3}" y="${py - 12}" width="10" height="24" rx="2" fill="#c8323a" stroke="#fff"/>
+    <text x="${px + 12}" y="${py + 4}" font-size="10" font-weight="700" fill="#5d6778">Pits</text>`;
+  // Windsock on the south end of the pits roof: points downwind, longer as the wind builds
+  const sockX = px + 2, sockY = py + 12;
+  let sock = `<circle cx="${sockX}" cy="${sockY}" r="2.5" fill="#1b2130"/>`;
+  if (dir !== null && ok(windSpeed) && windSpeed >= 2) {
+    const f = Math.min(1, windSpeed / 17);             // fully extended at ~15 kt (17 mph)
+    const L = 6 + 18 * f, w0 = 4, w1 = 1.5 + 1.5 * f;  // length, mouth half-width, tail half-width
+    const band = (a, b, fill) => {
+      const wa = w0 + (w1 - w0) * a, wb = w0 + (w1 - w0) * b;
+      return `<polygon fill="${fill}" points="${-wa},${-L * a} ${wa},${-L * a} ${wb},${-L * b} ${-wb},${-L * b}"/>`;
+    };
+    sock = `<g transform="translate(${sockX} ${sockY}) rotate(${dir + 180})">
+      ${[0, 1, 2, 3, 4].map(i => band(i / 5, (i + 1) / 5, i % 2 ? '#ffffff' : '#ff6a13')).join('')}
+      <polygon fill="none" stroke="#9a3d00" stroke-width=".6" points="${-w0},0 ${w0},0 ${w1},${-L} ${-w1},${-L}"/>
+    </g>` + sock;
+  }
+  const strips = [...FIELD.runways].reverse().map(r => {
+    const e = ext(r), w = Math.max(10, 22 * r.wid / maxWid);
+    return `<g transform="rotate(${r.hdg} ${C} ${C})" class="${r === favRwy ? 'fav' : 'alt'}">
+      <rect class="rwy" x="${C - w / 2}" y="${C - e.fwd}" width="${w}" height="${e.fwd + e.back}" rx="2"/>
+      <line class="cline" x1="${C}" y1="${C - e.fwd + 7}" x2="${C}" y2="${C + e.back - 7}"/>
+    </g>`;
+  }).join('');
+  // The end lying in direction H is where you land heading H+180, so it carries that runway number
+  const rn = FIELD.runways.map(r => {
+    const e = ext(r);
+    return [[r.hdg, e.fwd], [r.hdg + 180, e.back]].map(([h, d]) => {
+      const [x, y] = pt(h, d + 12);
+      return `<rect class="rn-bg" x="${x - 13}" y="${y - 9}" width="26" height="18" rx="4"/><text class="rn" x="${x}" y="${y + 4.5}" text-anchor="middle">${rwyNum(h + 180)}</text>`;
+    }).join('');
+  }).join('');
+  // Green LAND / TAKEOFF arrows beside the favored runway, pointing into the wind (comp.h)
+  let flow = '';
+  if (comp) {
+    const r = comp.rwy, e = ext(r);
+    const intoFwd = norm(comp.h) === norm(r.hdg);
+    const up = intoFwd ? e.fwd : e.back, down = intoFwd ? e.back : e.fwd;
+    const halfW = Math.max(10, 22 * r.wid / maxWid) / 2;
+    // Landing arrow starts out on the approach and the takeoff arrow ends on the climb-out,
+    // both past the runway ends (capped inside the ring)
+    const approach = Math.min(down + 45, 92), climb = Math.min(up + 45, 92);
+    const land = [C + approach, C + 4], tko = [C - 6, C - climb];
+
+    // Things the labels must not cover: runway number boxes and the pits/windsock
+    // [x, y, keep-out radius]: number boxes (26×18), the pits roof, the windsock mast
+    const obstacles = FIELD.runways.flatMap(rw => {
+      const ee = ext(rw);
+      return [[...pt(rw.hdg, ee.fwd + 12), 20], [...pt(rw.hdg + 180, ee.back + 12), 20]];
+    }).concat([[px + 2, py, 16], [px + 2, py + 12, 9]]);
+    const a = rad(comp.h);
+    const toScreen = (X, Y) => { const dx = X - C, dy = Y - C; return [C + dx * Math.cos(a) - dy * Math.sin(a), C + dx * Math.sin(a) + dy * Math.cos(a)]; };
+    // How much of a label would be covered (0 = completely clear)
+    const overlap = (lx, ly, hl) => {
+      let n = 0;
+      for (let t = -hl; t <= hl; t += 3) {
+        const [sx, sy] = toScreen(lx, ly + t);
+        if (obstacles.some(([ox, oy, rr]) => Math.hypot(sx - ox, sy - oy) < rr)) n++;
+      }
+      return n;
+    };
+    // Slide a label along its arrow, starting at the preferred spot; take the first clear spot,
+    // or the least-covered one if nothing is completely clear
+    const place = (lx, from, to, pref, hl) => {
+      const lo = Math.min(from, to) + hl, hi = Math.max(from, to) - hl;
+      const cands = [];
+      for (let y = lo; y <= hi; y += 2) cands.push(y);
+      cands.sort((p, q) => Math.abs(p - pref) - Math.abs(q - pref));
+      let best = null;
+      for (const y of cands) {
+        const pen = overlap(lx, y, hl);
+        if (!best || pen < best.pen) best = { y, pen };
+        if (pen === 0) break;
+      }
+      return best;
+    };
+    // Prefer the side away from the pits; each arrow switches sides on its own if its label won't fit
+    const rightNormal = norm(comp.h + 90);
+    const pref = Math.abs(((rightNormal - FIELD.pits.bearing + 540) % 360) - 180) < 90 ? -1 : 1;
+    const fit = (from, to, prefY, hl) => {
+      let best = null;
+      for (const side of [pref, -pref]) {
+        const x = C + side * (halfW + 7), lx = x + side * 9;
+        const p = place(lx, from, to, prefY, hl);
+        if (p && (!best || p.pen < best.pen)) best = { x, lx, y: p.y, pen: p.pen };
+        if (best && best.pen === 0) break;
+      }
+      if (best) return best;
+      const x = C + pref * (halfW + 7);
+      return { x, lx: x + pref * 9, y: prefY };
+    };
+    const LA = fit(land[1] + 2, land[0], C + (approach + down) / 2, 13);
+    const TA = fit(tko[1] + 8, tko[0], C - (climb + up) / 2, 22);
+    const arr = (x, y1, y2, dash) => `<line class="flow" x1="${x}" y1="${y1}" x2="${x}" y2="${y2 + 6}"${dash ? ' stroke-dasharray="5 3"' : ''}/>
+      <polygon class="flowhead" points="${x - 5},${y2 + 8} ${x + 5},${y2 + 8} ${x},${y2}"/>`;
+    // Labels run along the arrows, just outside them; flipped when they'd read upside down
+    const flip = norm(comp.h) > 180;
+    const label = (p, txt) => `<text class="flowtxt" x="${p.lx}" y="${p.y}" text-anchor="middle" dominant-baseline="middle"
+      transform="rotate(${flip ? 90 : -90} ${p.lx} ${p.y})">${txt}</text>`;
+    flow = `<g transform="rotate(${comp.h} ${C} ${C})">
+      ${arr(LA.x, land[0], land[1], true)}${arr(TA.x, tko[0], tko[1], false)}
+      ${label(LA, 'LAND')}${label(TA, 'TAKEOFF')}
+    </g>`;
+  }
+  const windArrow = dir === null ? '' : `
+    <g transform="rotate(${dir} ${C} ${C})">
+      <line class="arrow" x1="${C}" y1="8" x2="${C}" y2="${C - 18}"/>
+      <polygon class="arrowhead" points="${C - 13},${C - 30} ${C + 13},${C - 30} ${C},${C - 4}"/>
+    </g>${windLabel()}`;
+  // "WIND DIRECTION" sits just outside the ring at the arrow's tail, where nothing else is drawn
+  function windLabel() {
+    // Centered on the arrow's tail: above it on the top half of the ring, below it on the bottom half
+    const c = Math.cos(rad(dir));
+    const [x, y] = pt(dir, 104);
+    const y1 = c >= 0 ? y - 16 : y + 12;
+    return `<text class="windtxt" text-anchor="middle"><tspan x="${x}" y="${y1}">WIND</tspan><tspan x="${x}" y="${y1 + 9}">DIRECTION</tspan></text>`;
+  }
+  return `<svg class="compass" viewBox="-42 -22 304 264" role="img" aria-label="Wind from ${r0(dir)} degrees magnetic. Runways ${FIELD.runways.map(r => rwyNum(r.hdg) + '/' + rwyNum(r.hdg + 180)).join(' and ')}">
+    <circle class="ring" cx="${C}" cy="${C}" r="100"/>${ticks}${labels}
+    ${pits}${strips}
+    ${windArrow}${flow}${rn}${sock}
+  </svg>`;
+}
+
+function render(d, hours, idx) {
+  const c = d.current;
+  const elevFt = FIELD.elevFt || d.elevation * 3.28084;
+  $('#elev').textContent = `elev. ${Math.round(elevFt).toLocaleString()} ft`;
+  const todayStr = c.time.slice(0, 10);
+
+  const now = {
+    ...hours[idx],
+    temp: c.temperature_2m, dew: c.dew_point_2m, wind: c.wind_speed_10m, dir: c.wind_direction_10m,
+    gust: c.wind_gusts_10m, code: c.weather_code, isDay: c.is_day, precip: c.precipitation,
+    cloud: c.cloud_cover, msl: c.pressure_msl,
+  };
+  now.a = assess(now);
+  hours.forEach(h => { h.a = assess(h); });
+
+  /* Verdict */
+  const L = ['go', 'caution', 'nogo'];
+  const titles = ['Good flying conditions', 'Flyable with caution', 'Not recommended right now'];
+  const badges = ['GO', 'CAUTION', 'NO-GO'];
+  const rest = hours.slice(idx).filter(h => h.date === todayStr);
+  const win = bestWindow(rest);
+  const next48 = hours.slice(idx, idx + 72);
+  const nextGood = firstWindow(next48) || bestWindow(next48);
+  let winHtml;
+  if (win) winHtml = `Best window left today: <strong>${windowText(win)}</strong> (${win.n} hr${win.n > 1 ? 's' : ''} of good conditions)`;
+  else if (nextGood) winHtml = `No good window left today. Next good stretch: <strong>${dayName(nextGood.start.date, todayStr)} ${windowText(nextGood)}</strong>`;
+  else {
+    const cw = bestWindow(next48, 1);
+    winHtml = cw ? `No fully good hours in the next 3 days. Best flyable stretch: <strong>${dayName(cw.start.date, todayStr)} ${windowText(cw)}</strong> (caution)`
+                 : 'No flyable daylight hours in the next 3 days.';
+  }
+  // Landing tips (information only, they don't change the rating)
+  const tips = [];
+  if (PROFILES[settings.profile].landingTips && now.a.lvl < 2 && ok(now.wind)) {
+    const lc = runwayChoice(now.wind, now.dir).best;
+    if (now.wind < 5) tips.push('💡 Light wind: expect a faster groundspeed and longer landing roll. Plan a long, shallow approach.');
+    else if (lc.head >= 8) tips.push(`💡 ${r0(lc.head)} mph headwind on runway ${lc.num}: it slows your groundspeed for an easier landing.`);
+  }
+  const v = $('#verdict');
+  v.className = 'card verdict ' + L[now.a.lvl];
+  v.innerHTML = `
+    <div class="badge">${badges[now.a.lvl]}</div>
+    <div class="verdict-body">
+      <h2>${titles[now.a.lvl]}</h2>
+      <div class="sub" style="color:var(--muted);font-size:.9rem">Rated for: ${esc(PROFILES[settings.profile].label)}${settings.night ? ', night flying with lights' : ''} · <button class="linkish" onclick="openSettings()">change</button></div>
+      ${now.a.reasons.length ? `<ul class="reasons">${now.a.reasons.map(r => `<li class="l${r.l}">${esc(r.msg)}</li>`).join('')}</ul>`
+                             : `<ul class="reasons"><li>Light wind, no precipitation, good visibility</li></ul>`}
+      ${tips.map(t => `<div class="tip">${esc(t)}</div>`).join('')}
+      <div class="window">${winHtml}</div>
+    </div>`;
+
+  /* Wind */
+  const choice = runwayChoice(now.wind, now.dir);
+  const comp = choice.best;
+  const rwyPair = r => `${rwyNum(r.hdg)}/${rwyNum(r.hdg + 180)}`;
+  $('#rwyLabel').textContent = FIELD.runways.map(r => `${rwyPair(r)} ${r.name.toLowerCase()}`).join(' · ');
+  $('#wind').innerHTML = `
+    <div class="wind-wrap">
+      ${compassSvg(now.dir, comp, now.wind)}
+      <div class="wind-stats">
+        <div class="big">${r0(now.wind)} <small>mph</small></div>
+        <div style="color:var(--muted)">from ${cardinal(now.dir)} (${r0(toMag(now.dir))}° mag) · gusts <strong style="color:var(--navy)">${r0(now.gust)} mph</strong></div>
+        <dl class="kv">
+          <dt>Use runway</dt><dd>${comp.num} <span style="color:var(--muted);font-weight:400">(${comp.rwy.name.toLowerCase()})</span></dd>
+          <dt>Headwind</dt><dd>${comp.head >= 0 ? r0(comp.head) + ' mph' : 'Tailwind ' + r0(-comp.head) + ' mph'}</dd>
+          <dt>Crosswind</dt><dd>${r0(comp.crossAbs)} mph ${comp.crossAbs >= 1 ? 'from the ' + comp.side : ''}</dd>
+          <dt>Gust crosswind</dt><dd>${r0(components(now.gust, now.dir, comp.rwy.hdg).crossAbs)} mph</dd>
+          <dt>Pits windsock</dt><dd>${sockText(now.wind, now.gust, now.dir)}</dd>
+        </dl>
+        <table class="aloft rwys">
+          <thead><tr><th>Runway</th><th>Size</th><th>Head</th><th>Cross</th></tr></thead>
+          <tbody>${choice.all.map(c => `<tr${c === comp ? ' class="fav"' : ''}>
+            <td><strong>${c.num}</strong> <span style="color:var(--muted)">${c.rwy.name.toLowerCase()}</span></td>
+            <td>${c.rwy.len} × ${c.rwy.wid} ft</td>
+            <td>${c.head >= 0 ? r0(c.head) : '−' + r0(-c.head)}</td>
+            <td>${r0(c.crossAbs)}</td></tr>`).join('')}</tbody>
+        </table>
+      </div>
+    </div>
+    <div class="note"><span style="color:#b38a00;font-weight:700">Yellow</span> = where the wind is coming from. <span style="color:var(--go);font-weight:700">Green</span> = land and take off this way, into the wind. Wind in mph. The cross runway is recommended only when it cuts the crosswind by ${FIELD.crossRunwayMargin}+ mph.</div>`;
+
+  /* Conditions */
+  const da = densityAltitude(now.temp, now.msl, elevFt);
+  const vis = hours[idx].vis;
+  const today = d.daily;
+  const tiles = [
+    { lbl: 'Temperature', val: `${r0(now.temp)}°F`, sub: `Feels like ${r0(c.apparent_temperature)}°F`, cls: now.temp <= 20 || now.temp >= 100 ? 'warn' : '' },
+    { lbl: 'Sky', val: `${wx(now.code, now.isDay).icon} ${r0(now.cloud)}%`, sub: wx(now.code, now.isDay).text },
+    { lbl: 'Precip chance', val: `${r0(hours[idx].pop)}%`, sub: 'this hour', cls: hours[idx].pop >= 60 ? 'bad' : hours[idx].pop >= 30 ? 'warn' : '' },
+    { lbl: 'Visibility', val: ok(vis) ? (vis >= 10 ? '10+ mi' : `${vis.toFixed(1)} mi`) : '–', sub: 'forecast', cls: ok(vis) && vis < 4 ? 'warn' : '' },
+    { lbl: 'Dew point', val: `${r0(now.dew)}°F`, sub: `Spread ${r0(now.temp - now.dew)}° · RH ${r0(c.relative_humidity_2m)}%`, cls: now.temp - now.dew <= 3 ? 'warn' : '' },
+    { lbl: 'Density altitude', val: ok(da) ? `${Math.round(da / 100) * 100 >= 0 ? (Math.round(da / 100) * 100).toLocaleString() : 0} ft` : '–', sub: 'higher = less lift & thrust', cls: da > 7000 ? 'warn' : '' },
+    (() => {
+      const b = cloudBase(now.temp, now.dew), low = hours[idx].cloudLow;
+      const clouds = ok(low) && low >= 20;
+      const v = !ok(b) ? '–' : !clouds ? 'No low clouds' : b >= 10000 ? '10,000+ ft' : `~${(Math.round(b / 100) * 100).toLocaleString()} ft`;
+      const below = clouds && ok(b) && b < FIELD.ceilingFt;
+      return { lbl: 'Est. cloud base', val: v, sub: below ? `Below the ${FIELD.ceilingFt} ft ceiling` : `${r0(low)}% low cloud · AGL`, cls: below && low >= 60 ? 'warn' : '' };
+    })(),
+    { lbl: 'Altimeter', val: ok(now.msl) ? `${(now.msl * 0.02953).toFixed(2)}"` : '–', sub: `${r0(now.msl)} hPa` },
+    { lbl: 'Sun', val: `${clock(today.sunset[0])}`, sub: `Sunset · rise ${clock(today.sunrise[0])}` },
+    { lbl: 'UV index', val: r0(today.uv_index_max[0]), sub: 'today max', cls: today.uv_index_max[0] >= 8 ? 'warn' : '' },
+  ];
+  $('#conditions').innerHTML = `<div class="tiles">${tiles.map(t => `<div class="tile ${t.cls || ''}"><div class="lbl">${t.lbl}</div><div class="val">${t.val}</div><div class="sub">${esc(t.sub)}</div></div>`).join('')}<div class="tile" id="kpTile"><div class="lbl">GPS / Kp index</div><div class="val">…</div><div class="sub">geomagnetic</div></div></div>`;
+  if (lastKp) renderKp(lastKp);
+
+  /* Aloft */
+  const h0 = hours[idx];
+  const rows = [
+    ['Surface (33 ft)', now.wind, now.dir, now.gust],
+    ['~260 ft', h0.w80, h0.d80, null],
+    ['~400 ft', h0.w120, h0.d120, null],
+    ['~590 ft', h0.w180, h0.d180, null],
+  ];
+  const topWind = Math.max(...[h0.w120, h0.w180].filter(ok));
+  const shear = Number.isFinite(topWind) && topWind - now.wind >= 8;
+  $('#aloft').innerHTML = `
+    <table class="aloft">
+      <thead><tr><th>Height</th><th>Speed</th><th>From</th></tr></thead>
+      <tbody>${rows.map(([l, s, dir, g]) => `<tr><td>${l}</td><td><strong>${r0(s)} mph</strong>${ok(g) ? ` <span style="color:var(--muted)">gusting ${r0(g)}</span>` : ''}</td><td>${arrow(dir)} ${cardinal(dir)} ${ok(dir) ? `(${r0(toMag(dir))}°)` : ''}</td></tr>`).join('')}</tbody>
+    </table>
+    <div class="note">${shear ? '⚠️ Wind gets noticeably stronger with height. Expect your plane to drift at altitude, and turbulence on climb-out.' : 'Wind is fairly steady with height.'} Field ceiling is <strong>${FIELD.ceilingFt} ft AGL</strong>; ~590 ft is the highest forecast level below it. Directions are degrees magnetic.</div>`;
+
+  /* Hourly */
+  const maxW = Math.max(25, ...hours.slice(idx, idx + 36).map(h => h.gust || 0));
+  $('#hours').innerHTML = [now, ...hours.slice(idx + 1, idx + 36)].map((h, i) => {
+    const w = wx(h.code, h.isDay);
+    const showDate = i === 0 || h.hour === 0;
+    return `<div class="hr l${h.a.lvl} ${h.isDay ? '' : 'night'}" title="${esc(h.a.reasons.map(r => r.msg).join(' · ') || 'Good')}">
+      <div class="stripe"></div>
+      <div class="t">${i === 0 ? 'Now' : hourLabel(h.hour)}</div>
+      <div class="d">${showDate ? dayName(h.date, todayStr) : ''}</div>
+      <div class="ic">${w.icon}</div>
+      <div class="tmp">${r0(h.temp)}°</div>
+      <div class="wbar"><span class="s" style="height:${Math.max(2, h.wind / maxW * 46)}px"></span><span class="g" style="height:${Math.max(2, h.gust / maxW * 46)}px"></span></div>
+      <div class="ws">${arrow(h.dir)}${r0(h.wind)}<span style="color:var(--muted);font-weight:400">/${r0(h.gust)}</span></div>
+      <div class="pp">${h.pop ? `💧${h.pop}%` : '&nbsp;'}</div>
+    </div>`;
+  }).join('');
+
+  /* Daily */
+  $('#days').innerHTML = today.time.map((date, i) => {
+    const dh = hours.filter(h => h.date === date && h.isDay && (date !== todayStr || hours.indexOf(h) >= idx));
+    const good = dh.filter(h => h.a.lvl === 0).length;
+    const okc = dh.filter(h => h.a.lvl === 1).length;
+    const bw = bestWindow(dh) || bestWindow(dh, 1);
+    const over = date === todayStr && !dh.length;
+    const cls = over ? '' : good >= 3 ? 'go' : (good + okc) >= 2 ? 'caution' : 'nogo';
+    const lab = over ? 'Daylight over' : good >= 3 ? `${good} good hrs` : (good + okc) >= 2 ? `${good + okc} flyable hrs` : 'Poor';
+    const w = wx(today.weather_code[i]);
+    return `<div class="day">
+      <div><div class="dn">${dayName(date, todayStr)}</div><div class="sub">${w.text}</div></div>
+      <div class="ic">${w.icon}</div>
+      <div><strong>${r0(today.temperature_2m_max[i])}°</strong> / ${r0(today.temperature_2m_min[i])}°<div class="sub">💧 ${r0(today.precipitation_probability_max[i])}%</div></div>
+      <div class="c4">Wind up to <strong>${r0(today.wind_speed_10m_max[i])}</strong>, gusts <strong>${r0(today.wind_gusts_10m_max[i])}</strong> mph</div>
+      <div class="c5"><span class="pill ${cls}">${lab}</span> ${bw ? `<span class="sub">best ${windowText(bw)}</span>` : ''}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderAlerts(features) {
+  const el = $('#alerts');
+  if (!features || !features.length) { el.innerHTML = ''; return; }
+  el.innerHTML = features.map(f => {
+    const p = f.properties || {};
+    const ends = p.ends || p.expires;
+    return `<section class="card alert"><h3>⚠️ ${esc(p.event)}</h3><p>${esc(p.headline || '')}${ends ? ` · until ${esc(new Date(ends).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' }))}` : ''}</p></section>`;
+  }).join('');
+}
+
+function haversineMi(a, b, c, d) {
+  const R = 3958.8, rad = x => x * Math.PI / 180;
+  const dl = rad(c - a), dn = rad(d - b);
+  const h = Math.sin(dl / 2) ** 2 + Math.cos(rad(a)) * Math.cos(rad(c)) * Math.sin(dn / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+function renderObs(o) {
+  const p = o.properties;
+  const kmh = x => ok(x) ? x * 0.621371 : null;
+  const tF = ok(p.temperature?.value) ? p.temperature.value * 9 / 5 + 32 : null;
+  const ws = kmh(p.windSpeed?.value), wg = kmh(p.windGust?.value), wd = p.windDirection?.value;
+  const age = Math.round((Date.now() - new Date(p.timestamp)) / 60000);
+  const [lon, lat] = o.geometry?.coordinates || [];
+  const dist = ok(lat) ? Math.round(haversineMi(FIELD.lat, FIELD.lon, lat, lon)) : null;
+  const visMi = ok(p.visibility?.value) ? p.visibility.value / 1609.344 : null;
+  $('#obs').innerHTML = `
+    <div class="big" style="font-size:1.8rem">${ok(ws) ? r0(ws) : '–'} <small>mph</small> ${ok(wd) ? `<small>from ${cardinal(wd)}</small>` : ws === 0 ? '<small>calm</small>' : ''}</div>
+    <dl class="kv">
+      <dt>Station</dt><dd>Provo Airport (${FIELD.station})${dist ? `, ${dist} mi away` : ''}</dd>
+      <dt>Reported</dt><dd>${age < 120 ? `${age} min ago` : new Date(p.timestamp).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</dd>
+      <dt>Gusts</dt><dd>${ok(wg) ? r0(wg) + ' mph' : 'none reported'}</dd>
+      <dt>Temperature</dt><dd>${ok(tF) ? r0(tF) + '°F' : '–'}</dd>
+      <dt>Sky</dt><dd>${esc(p.textDescription || '–')}</dd>
+      <dt>Visibility</dt><dd>${ok(visMi) ? (visMi >= 10 ? '10+ mi' : visMi.toFixed(1) + ' mi') : '–'}</dd>
+    </dl>
+    <div class="note">Real measurements from the nearest airport. Wind at the field can differ, especially near the lake.</div>`;
+}
+
+let lastKp = null;
+function renderKp(kp) {
+  const t = $('#kpTile'); if (!t) return;
+  t.className = 'tile ' + (kp >= 6 ? 'bad' : kp >= 5 ? 'warn' : '');
+  t.querySelector('.val').textContent = kp.toFixed(1);
+  t.querySelector('.sub').textContent = kp >= 5 ? 'Storm: GPS may be unreliable' : kp >= 4 ? 'Active: minor GPS effects' : 'Quiet: GPS OK';
+}
+function parseKp(j) {
+  if (!Array.isArray(j) || !j.length) return null;
+  const last = j[j.length - 1];
+  const v = Array.isArray(last) ? parseFloat(last[1]) : parseFloat(last.Kp ?? last.kp_index ?? last.kp);
+  return ok(v) ? v : null;
+}
+
+/* ---------- Main ---------- */
+let lastLoad = 0;
+async function loadAll() {
+  lastLoad = Date.now();
+  $('#updated').textContent = 'Updating…';
+  const forecast = getJSON(forecastUrl());
+  const alerts = getJSON(`https://api.weather.gov/alerts/active?point=${FIELD.lat},${FIELD.lon}`, { headers: { Accept: 'application/geo+json' } });
+  const obs = getJSON(`https://api.weather.gov/stations/${FIELD.station}/observations/latest`, { headers: { Accept: 'application/geo+json' } });
+  const kp = getJSON('https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json');
+
+  try {
+    const d = await forecast;
+    const hours = buildHours(d);
+    const key = d.current.time.slice(0, 13);
+    let idx = hours.findIndex(h => h.t.startsWith(key));
+    if (idx < 0) idx = 0;
+    render(d, hours, idx);
+    $('#updated').textContent = 'Updated ' + new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  } catch (e) {
+    $('#verdict').className = 'card err';
+    $('#verdict').innerHTML = `Couldn't load the forecast (${esc(e.message)}). Check your connection. <button class="linkish" onclick="loadAll()">Try again</button>`;
+    $('#updated').textContent = 'Update failed';
+  }
+
+  alerts.then(j => renderAlerts(j.features)).catch(() => {});
+  obs.then(renderObs).catch(() => { $('#obs').innerHTML = '<span class="loading">Observations unavailable right now.</span>'; });
+  kp.then(j => { lastKp = parseKp(j); if (lastKp !== null) renderKp(lastKp); })
+    .catch(() => { const t = $('#kpTile'); if (t) t.querySelector('.val').textContent = '–'; });
+}
+
+/* ---------- Settings UI ---------- */
+function updateLimitsText() {
+  const P = PROFILES[$('#profileSel').value];
+  $('#limitsText').innerHTML = `Good up to / caution up to:<br>Wind <strong>${P.wind[0]} / ${P.wind[1]}</strong> mph · Gusts <strong>${P.gust[0]} / ${P.gust[1]}</strong> mph` +
+    (P.xwind[0] < 99 ? ` · Crosswind <strong>${P.xwind[0]} / ${P.xwind[1]}</strong> mph` : ' · Crosswind not rated');
+}
+function openSettings() {
+  $('#profileSel').innerHTML = Object.entries(PROFILES).map(([k, p]) => `<option value="${k}" ${k === settings.profile ? 'selected' : ''}>${esc(p.label)}</option>`).join('');
+  $('#nightChk').checked = !!settings.night;
+  updateLimitsText();
+  $('#settings').showModal();
+}
+$('#profileSel').addEventListener('change', updateLimitsText);
+$('#settings').addEventListener('close', () => {
+  if ($('#settings').returnValue !== 'save') return;
+  settings.profile = $('#profileSel').value;
+  settings.night = $('#nightChk').checked;
+  saveSettings();
+  loadAll();
+});
+$('#settingsBtn').addEventListener('click', openSettings);
+$('#refreshBtn').addEventListener('click', loadAll);
+
+loadAll();
+setInterval(loadAll, REFRESH_MS);
+// Refresh when the pilot comes back to the tab, if the data is more than 2 minutes old
+document.addEventListener('visibilitychange', () => { if (!document.hidden && Date.now() - lastLoad > 120000) loadAll(); });
+</script>
+</body>
+</html>

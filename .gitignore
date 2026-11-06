@@ -1,0 +1,11 @@
+# OS clutter
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Editor files
+.vscode/
+*.swp
+
+# Claude Code personal settings (launch.json is shared on purpose)
+.claude/settings.local.json
