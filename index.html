@@ -5,7 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Flight Weather · Utah Valley Aeromodelers</title>
 <meta name="description" content="Flying weather for UVA Field, Saratoga Springs, Utah: wind, gusts, crosswind, wind aloft and a go/no-go outlook for RC pilots.">
-<link rel="icon" href="https://utahvalleyaeromodelers.com/logo.svg">
+<link rel="icon" href="logo.svg">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#1b2130">
 <style>
   :root {
     --navy: #1b2130;
@@ -271,7 +274,7 @@
 
 <header>
   <div class="head-inner">
-    <img src="https://utahvalleyaeromodelers.com/logo.svg" alt="Utah Valley Aeromodelers logo">
+    <img src="logo.svg" alt="Utah Valley Aeromodelers logo">
     <div class="head-title">
       <h1>Flight Weather <span class="fria" title="FAA-Recognized Identification Area: aircraft without Remote ID may fly here, within the site boundary and visual line of sight">FAA FRIA</span></h1>
       <p>UVA Field (Jordan River Model Port) · Saratoga Springs, Utah · <span id="elev">elev. –</span> · ceiling 700 ft AGL</p>
@@ -1207,7 +1210,12 @@ async function loadAll() {
     let idx = hours.findIndex(h => h.t.startsWith(key));
     if (idx < 0) idx = 0;
     render(d, hours, idx);
-    $('#updated').textContent = 'Updated ' + new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    // With no signal the phone shows the last saved forecast: say so instead of "Updated <now>"
+    const fieldNow = new Date().toLocaleString('sv-SE', { timeZone: FIELD.tz }).replace(' ', 'T').slice(0, 16);
+    const ageMin = (Date.parse(fieldNow) - Date.parse(d.current.time)) / 60000;
+    $('#updated').textContent = ageMin > 90
+      ? `Offline · saved ${dayName(d.current.time.slice(0, 10), fieldNow.slice(0, 10))} ${clock(d.current.time)}`
+      : 'Updated ' + new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   } catch (e) {
     $('#verdict').className = 'card err';
     $('#verdict').innerHTML = `Couldn't load the forecast (${esc(e.message)}). Check your connection. <button class="linkish" onclick="loadAll()">Try again</button>`;
@@ -1246,6 +1254,8 @@ loadAll();
 setInterval(loadAll, REFRESH_MS);
 // Refresh when the pilot comes back to the tab, if the data is more than 2 minutes old
 document.addEventListener('visibilitychange', () => { if (!document.hidden && Date.now() - lastLoad > 120000) loadAll(); });
+// Installable app + last forecast offline (only over http(s); skipped when opened as a local file)
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>
 </body>
 </html>
