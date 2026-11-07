@@ -1,0 +1,7 @@
+# Cloudflare Worker that relays nearby weather station reports to the app. Deploy: npx wrangler deploy
+name = "uva-wx-relay"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+workers_dev = true
+preview_urls = false
+# Live at https://uva-wx-relay.uvahabanero.workers.dev (Cloudflare account subdomain: uvahabanero)

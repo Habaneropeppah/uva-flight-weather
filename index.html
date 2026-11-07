@@ -338,11 +338,12 @@
         <dt>Forecast</dt><dd>NOAA weather models (HRRR, updated hourly, blended with GFS for later days) for a point about 0.2 mi from the field, at 4,495 ft</dd>
         <dt>Alerts</dt><dd>National Weather Service, Salt Lake City office, for the field's exact location</dd>
         <dt>Sun &amp; glare</dt><dd>Calculated for the field from the date and time</dd>
+        <dt>Nearby station</dt><dd>Live readings from EW9528, a home weather station in the CWOP network about 1.4 mi WNW of the field, via findu.com</dd>
         <dt>Air quality</dt><dd>Open-Meteo air quality model (US AQI) for the field</dd>
         <dt>GPS / Kp</dt><dd>NOAA Space Weather Prediction Center</dd>
         <dt>Field info</dt><dd>Runways, pilot stations, pits, windsock and field rules from club members</dd>
       </dl>
-      <div class="note">There's no weather station at the field yet, so everything here is a forecast for the field, not a live measurement. Check the windsock before you fly.</div>
+      <div class="note">There's no weather station at the field yet. Except for the nearby station reading, everything here is a forecast for the field, not a live measurement. Check the windsock before you fly.</div>
     </section>
   </div>
 </main>
@@ -353,6 +354,7 @@
   Ratings are based on the aircraft type picked in Settings.</p>
   <p>Data: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> forecast and air quality (CC BY 4.0),
   <a href="https://www.weather.gov/" target="_blank" rel="noopener">National Weather Service</a> alerts,
+  station EW9528 via <a href="http://www.findu.com/" target="_blank" rel="noopener">findu.com</a> (CWOP),
   <a href="https://www.swpc.noaa.gov/" target="_blank" rel="noopener">NOAA SWPC</a> Kp index. Refreshes every 10 minutes.
   Field imagery: Google Earth.</p>
 </footer>
@@ -407,6 +409,9 @@ const FIELD = {
   pilotFacingTrue: 236.5,
   // Glare when the sun is this low and this close to where pilots are looking
   glare: { maxElev: 30, halfAngle: 50, maxCloud: 80 },
+  // Nearby live weather station, read through our relay (relay/worker.js on Cloudflare).
+  // Set relay to '' to hide it.
+  station: { relay: 'https://uva-wx-relay.uvahabanero.workers.dev', call: 'EW9528', where: '1.4 mi WNW', staleMin: 30 },
   coldPackF: 50,     // cold-battery tip at or below this temperature
   trendHours: 4,     // how far ahead the wind trend looks
   // Satellite photo behind the compass (Google Earth, north up). cx/cy = pixel where the runways
@@ -972,6 +977,7 @@ function render(d, hours, idx) {
           <dt>Crosswind</dt><dd>${r0(comp.crossAbs)} mph ${comp.crossAbs >= 1 ? 'from the ' + comp.side : ''}</dd>
           <dt>Gust crosswind</dt><dd>${r0(components(now.gust, now.dir, comp.rwy.hdg).crossAbs)} mph</dd>
           <dt>Pits windsock</dt><dd>${sockText(now.wind, now.gust, now.dir)}</dd>
+          ${FIELD.station.relay ? `<dt>Nearby station</dt><dd id="stationLive">${stationHtml()}</dd>` : ''}
         </dl>
         <table class="aloft rwys">
           <thead><tr><th>Runway</th><th>Size</th><th>Head</th><th>Cross</th></tr></thead>
@@ -1143,6 +1149,20 @@ function renderAlerts(features) {
 /* Field notice: club leadership edits field-notice.txt (next to index.html) to post a banner.
    Lines starting with # are ignored. Optional first lines: "type: closed" (red banner, overrides
    the GO/NO-GO verdict) and "until: YYYY-MM-DD" (banner disappears after that date). */
+// Latest live report from the nearby station (via the relay), shown in the Wind & Runway card
+let lastStation = null;
+function stationHtml() {
+  const S = FIELD.station, r = lastStation && lastStation.reports && lastStation.reports[0];
+  const where = `<span style="color:var(--muted);font-weight:400"> · ${esc(S.call)}, ${esc(S.where)} (live)</span>`;
+  if (!r) return `<span style="color:var(--muted);font-weight:400">${lastStation ? 'No report available' : 'Loading…'}</span>`;
+  const age = Math.max(0, Math.round((Date.now() - Date.parse(r.time)) / 60000));
+  const ago = age < 60 ? `${age} min ago` : `${Math.round(age / 60)} hr ago`;
+  if (age > S.staleMin) return `<span style="color:var(--muted);font-weight:400">No recent report (last one ${ago})</span>${where}`;
+  const wind = r.mph < 1 ? 'Calm' : `${cardinal(r.dir)} ${r0(r.mph)} mph${r.gust > r.mph ? `, gusts ${r0(r.gust)}` : ''}`;
+  return `${wind} · ${r0(r.tempF)}°F <span style="color:var(--muted);font-weight:400">· ${ago}</span>${where}`;
+}
+function renderStation() { const el = $('#stationLive'); if (el) el.innerHTML = stationHtml(); }
+
 let fieldNotice = null;
 let airQ = null;   // Open-Meteo air quality "current" block: us_aqi, pm2_5
 function parseNotice(txt) {
@@ -1198,6 +1218,8 @@ async function loadAll() {
   const forecast = getJSON(forecastUrl());
   const alerts = getJSON(`https://api.weather.gov/alerts/active?point=${FIELD.lat},${FIELD.lon}`, { headers: { Accept: 'application/geo+json' } });
   const kp = getJSON('https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json');
+  const S = FIELD.station;
+  const station = S.relay ? getJSON(`${S.relay}/station?call=${encodeURIComponent(S.call)}`).catch(() => null) : Promise.resolve(null);
   const air = getJSON(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${FIELD.lat}&longitude=${FIELD.lon}&current=us_aqi,pm2_5&timezone=${encodeURIComponent(FIELD.tz)}`)
     .then(j => j.current || null).catch(() => null);
   // The notice is a small local file; wait briefly for it so a "closed" notice is in the verdict
@@ -1226,6 +1248,7 @@ async function loadAll() {
   }
 
   alerts.then(j => renderAlerts(j.features)).catch(() => {});
+  station.then(j => { if (j) lastStation = j; else if (!lastStation) lastStation = { reports: [] }; renderStation(); });
   kp.then(j => { lastKp = parseKp(j); if (lastKp !== null) renderKp(lastKp); })
     .catch(() => { const t = $('#kpTile'); if (t) t.querySelector('.val').textContent = '–'; });
 }
