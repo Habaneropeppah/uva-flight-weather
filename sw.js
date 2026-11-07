@@ -1,11 +1,13 @@
 // Service worker: lets phones install the app and shows the last forecast when there's no signal.
 // Network first for everything, so pilots always get fresh data when they're online;
 // the saved copy is only used when the network fails.
-const CACHE = 'uva-flight-wx-v1';
+const CACHE = 'uva-flight-wx-v2';
 const SHELL = ['./', 'index.html', 'field-photo.jpg', 'logo.svg', 'manifest.webmanifest', 'icon-192.png'];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(CACHE)
+    .then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'no-cache' }))))
+    .then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', e => {
@@ -17,8 +19,11 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET' || !req.url.startsWith('http')) return;
+  // App files: ask the server whether there's a newer version every time (GitHub Pages
+  // otherwise lets phones reuse their copy for 10 minutes). Weather APIs are fetched as-is.
+  const sameSite = new URL(req.url).origin === self.location.origin;
   e.respondWith(
-    fetch(req).then(res => {
+    fetch(req, sameSite ? { cache: 'no-cache' } : undefined).then(res => {
       if (res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); }
       return res;
     }).catch(() => caches.match(req).then(hit => hit || (req.mode === 'navigate' ? caches.match('index.html') : Response.error())))
