@@ -7,5 +7,9 @@ Desktop.ini
 .vscode/
 *.swp
 
+# Cloudflare deploy tool scratch files
+.wrangler/
+node_modules/
+
 # Claude Code personal settings (launch.json is shared on purpose)
 .claude/settings.local.json
