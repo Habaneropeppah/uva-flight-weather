@@ -304,30 +304,10 @@
     <div id="wind"></div>
   </section>
 
-  <div class="grid2">
-    <section class="card">
-      <h2>Conditions Now</h2>
-      <div id="conditions"></div>
-    </section>
-    <div class="stack">
-      <section class="card">
-        <h2>Wind Aloft <small>up to the 700 ft AGL ceiling · this hour</small></h2>
-        <div id="aloft"></div>
-      </section>
-      <section class="card">
-        <h2>Where This Data Comes From</h2>
-        <dl class="kv sources">
-          <dt>Forecast</dt><dd>NOAA weather models (HRRR, updated hourly, blended with GFS for later days) for a point about 0.2 mi from the field, at 4,495 ft</dd>
-          <dt>Alerts</dt><dd>National Weather Service, Salt Lake City office, for the field's exact location</dd>
-          <dt>Sun &amp; glare</dt><dd>Calculated for the field from the date and time</dd>
-          <dt>Air quality</dt><dd>Open-Meteo air quality model (US AQI) for the field</dd>
-          <dt>GPS / Kp</dt><dd>NOAA Space Weather Prediction Center</dd>
-          <dt>Field info</dt><dd>Runways, pilot stations, pits, windsock and field rules from club members</dd>
-        </dl>
-        <div class="note">There's no weather station at the field yet, so everything here is a forecast for the field, not a live measurement. Check the windsock before you fly.</div>
-      </section>
-    </div>
-  </div>
+  <section class="card">
+    <h2>Conditions Now</h2>
+    <div id="conditions"></div>
+  </section>
 
   <section class="card">
     <h2>Hour by Hour <small>next 36 hours</small></h2>
@@ -346,6 +326,25 @@
     <h2>7-Day Flying Outlook <small>tap a day for hour-by-hour</small></h2>
     <div class="days" id="days"></div>
   </section>
+
+  <div class="grid2">
+    <section class="card">
+      <h2>Wind Aloft <small>up to the 700 ft AGL ceiling · this hour</small></h2>
+      <div id="aloft"></div>
+    </section>
+    <section class="card">
+      <h2>Where This Data Comes From</h2>
+      <dl class="kv sources">
+        <dt>Forecast</dt><dd>NOAA weather models (HRRR, updated hourly, blended with GFS for later days) for a point about 0.2 mi from the field, at 4,495 ft</dd>
+        <dt>Alerts</dt><dd>National Weather Service, Salt Lake City office, for the field's exact location</dd>
+        <dt>Sun &amp; glare</dt><dd>Calculated for the field from the date and time</dd>
+        <dt>Air quality</dt><dd>Open-Meteo air quality model (US AQI) for the field</dd>
+        <dt>GPS / Kp</dt><dd>NOAA Space Weather Prediction Center</dd>
+        <dt>Field info</dt><dd>Runways, pilot stations, pits, windsock and field rules from club members</dd>
+      </dl>
+      <div class="note">There's no weather station at the field yet, so everything here is a forecast for the field, not a live measurement. Check the windsock before you fly.</div>
+    </section>
+  </div>
 </main>
 
 <footer>
